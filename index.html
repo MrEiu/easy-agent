@@ -328,9 +328,17 @@
             <aside id="workspace-explorer" class="w-64 shrink-0 border-r panel-divider bg-[#050505] flex flex-col">
                 <div class="h-9 border-b panel-divider flex items-center justify-between px-3">
                     <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Artifacts Explorer</span>
-                    <button onclick="refreshWorkspace()" class="text-gray-600 hover:text-gray-300">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M4 4v5h.582M20 20v-5h-.581M5.5 9A7.5 7.5 0 0118.2 6.2M18.5 15A7.5 7.5 0 015.8 17.8"/></svg>
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button onclick="toggleExpandAll()" class="text-gray-600 hover:text-gray-300" title="展开/折叠全部">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M8 9l4-4 4 4m0 6l-4 4-4-4"/></svg>
+                        </button>
+                        <button onclick="toggleWorkspaceFullscreen()" class="text-gray-600 hover:text-gray-300" title="全屏画板">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/></svg>
+                        </button>
+                        <button onclick="refreshWorkspace()" class="text-gray-600 hover:text-gray-300" title="刷新">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M4 4v5h.582M20 20v-5h-.581M5.5 9A7.5 7.5 0 0118.2 6.2M18.5 15A7.5 7.5 0 015.8 17.8"/></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="p-2 border-b panel-divider">
                     <input id="file-filter" oninput="renderFileTree()" class="w-full bg-[#0D0D0D] border border-white/10 rounded-md px-2 py-1.5 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-500/40" placeholder="Filter files..." />
@@ -473,7 +481,7 @@ let latestApiTraces = [];
 let workspaceView = 'explorer';
 let openedFiles = [];
 let activeFilePath = null;
-let collapsedFolders = new Set(JSON.parse(localStorage.getItem('scrna_collapsed_folders_v1') || '[]'));
+let collapsedFolders = new Set(JSON.parse(localStorage.getItem('scrna_collapsed_folders_v1') || '["run", "run:"]'));
 
 let settings = loadSettings();
 let currentUser = loadCurrentUser();
@@ -1334,7 +1342,24 @@ function buildTree(files) {
     const root = { name: 'workspace', type: 'dir', children: {}, path: '' };
     files.forEach(file => {
         const normalized = shortPath(file.path).replace(/^\/+/, '');
-        const parts = normalized.split('/').filter(Boolean);
+        let parts = normalized.split('/').filter(Boolean);
+
+        // Simplify hierarchy: strip nested guest and run/session folders
+        if (parts.length > 0) {
+            if (parts[0] === 'output') {
+                if (parts.length >= 3 && parts[2].startsWith('run_')) {
+                    parts = ['output'].concat(parts.slice(3));
+                }
+            } else if (parts[0] === 'workspace') {
+                if (parts.length >= 3 && parts[2].startsWith('session_')) {
+                    parts = ['workspace'].concat(parts.slice(3));
+                }
+            } else if (parts[0] === 'run:' || parts[0] === 'run') {
+                parts[0] = 'run';
+                parts = parts.filter(p => p && !p.startsWith('run_'));
+            }
+        }
+
         let node = root;
         parts.forEach((part, idx) => {
             const isFile = idx === parts.length - 1;
@@ -1376,6 +1401,12 @@ function renderFileTree(runFilterId = null) {
         collectFolderKeys(tree).forEach(k => collapsedFolders.add(k));
         localStorage.setItem('scrna_collapsed_folders_v1', JSON.stringify(Array.from(collapsedFolders)));
         localStorage.setItem('scrna_folder_state_initialized_v1', 'true');
+    }
+    if (!localStorage.getItem('scrna_folder_run_collapsed_v1')) {
+        collapsedFolders.add('run');
+        collapsedFolders.add('run:');
+        localStorage.setItem('scrna_collapsed_folders_v1', JSON.stringify(Array.from(collapsedFolders)));
+        localStorage.setItem('scrna_folder_run_collapsed_v1', 'true');
     }
     treeEl.innerHTML = renderTreeNode(tree, 0);
 }
@@ -1434,6 +1465,19 @@ function renderTreeNode(node, depth) {
 function toggleFolderNode(folderKey) {
     if (collapsedFolders.has(folderKey)) collapsedFolders.delete(folderKey);
     else collapsedFolders.add(folderKey);
+    localStorage.setItem('scrna_collapsed_folders_v1', JSON.stringify(Array.from(collapsedFolders)));
+    renderFileTree();
+}
+
+function toggleExpandAll() {
+    const tree = buildTree(window.__workspaceFiles || collectSessionArtifacts());
+    const allKeys = collectFolderKeys(tree);
+    const anyCollapsed = allKeys.some(k => collapsedFolders.has(k));
+    if (anyCollapsed) {
+        collapsedFolders.clear();
+    } else {
+        allKeys.forEach(k => collapsedFolders.add(k));
+    }
     localStorage.setItem('scrna_collapsed_folders_v1', JSON.stringify(Array.from(collapsedFolders)));
     renderFileTree();
 }

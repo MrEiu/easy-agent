@@ -79,8 +79,8 @@ def get_username_from_mapping(mapping: Dict[str, Any]) -> str:
     return sanitize_username(mapping.get("username") or "guest")
 
 
-def run_output_dir(username: str, run_id: str) -> Path:
-    return config.OUTPUT_DIR / sanitize_username(username) / safe_id(run_id, "run")
+def run_output_dir(username: str, session_id: str) -> Path:
+    return config.OUTPUT_DIR / sanitize_username(username) / safe_id(session_id, "session")
 
 
 def rel_public_path(path: Path) -> str:

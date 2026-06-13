@@ -1353,11 +1353,11 @@ function buildTree(files) {
         // Simplify hierarchy: strip nested guest and run/session folders
         if (parts.length > 0) {
             if (parts[0] === 'output') {
-                if (parts.length >= 3 && parts[2].startsWith('run_')) {
+                if (parts.length >= 3) {
                     parts = ['output'].concat(parts.slice(3));
                 }
             } else if (parts[0] === 'workspace') {
-                if (parts.length >= 3 && parts[2].startsWith('session_')) {
+                if (parts.length >= 3) {
                     parts = ['workspace'].concat(parts.slice(3));
                 }
             } else if (parts[0] === 'run:' || parts[0] === 'run') {

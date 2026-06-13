@@ -273,7 +273,7 @@ async def get_run_api(request):
     run = state.RUNS.get(run_id)
     if not run:
         # Try loading manifest from disk by searching output.
-        for p in config.OUTPUT_DIR.rglob("run_manifest.json"):
+        for p in config.OUTPUT_DIR.rglob(f"run_manifest_{run_id}.json"):
             data = utils.load_json_file(p, None)
             if isinstance(data, dict) and data.get("run_id") == run_id:
                 return JSONResponse({"id": run_id, "manifest": data, **data})

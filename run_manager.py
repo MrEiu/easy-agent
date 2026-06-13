@@ -31,7 +31,7 @@ def session_chatlog_path(username: str, session_id: str) -> Path:
 def create_run_context(session_id: str, username: str, query: str, client_run_id: Optional[str] = None) -> Dict[str, Any]:
     username = utils.sanitize_username(username)
     run_id = utils.safe_id(client_run_id, "run") if client_run_id else f"run_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
-    out_dir = utils.run_output_dir(username, run_id)
+    out_dir = utils.run_output_dir(username, session_id)
     for sub in ("params", "logs", "artifacts", "temp"):
         (out_dir / sub).mkdir(parents=True, exist_ok=True)
 
@@ -45,10 +45,10 @@ def create_run_context(session_id: str, username: str, query: str, client_run_id
         "ended_at": None,
         "output_dir": utils.rel_public_path(out_dir),
         "output_abs_dir": str(out_dir),
-        "manifest_path": utils.rel_public_path(out_dir / "run_manifest.json"),
-        "manifest_abs_path": str(out_dir / "run_manifest.json"),
-        "events_path": utils.rel_public_path(out_dir / "logs" / "events.jsonl"),
-        "events_abs_path": str(out_dir / "logs" / "events.jsonl"),
+        "manifest_path": utils.rel_public_path(out_dir / f"run_manifest_{run_id}.json"),
+        "manifest_abs_path": str(out_dir / f"run_manifest_{run_id}.json"),
+        "events_path": utils.rel_public_path(out_dir / "logs" / f"events_{run_id}.jsonl"),
+        "events_abs_path": str(out_dir / "logs" / f"events_{run_id}.jsonl"),
         "summary_path": utils.rel_public_path(summary_path(username, session_id)),
         "logs": [],
         "api_traces": [],

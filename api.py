@@ -122,40 +122,24 @@ async def run_plan_api(request):
     summary = run_manager.load_session_summary(run["username"], run["session_id"])
 
     prompt = f"""
-你是通用 Skill Orchestrator Agent。现在用户已经确认执行计划，你需要运行计划中的 skill，并把所有输出写入当前 run 目录。
+你是通用 Skill Orchestrator Agent。你需要运行用户确认的执行计划。
 
 当前 run:
-{json.dumps({k: run[k] for k in ['id','username','session_id','query','output_dir','manifest_path','events_path']}, ensure_ascii=False, indent=2)}
+{json.dumps({k: run[k] for k in ['id','username','session_id','query','output_dir']}, ensure_ascii=False, indent=2)}
 
 计划:
 {json.dumps(run.get('plan', {}), ensure_ascii=False, indent=2)}
 
-Preflight:
-{json.dumps(run.get('preflight', {}), ensure_ascii=False, indent=2)}
-
-会话摘要:
-{json.dumps(summary, ensure_ascii=False, indent=2)}
-
 规则:
-1. 当前的系统是windows
-2. 运行技能前复核与阅读文档规则：在调用 execute_skill 运行具体技能之前，你必须先读取该技能所在目录下的说明文件，如 README.md、README.txt 或 skill.json、manifest.json（可以使用 read_project_file 读取），以详细了解该技能的入参定义、执行格式与用法，严禁在未阅读文档说明的情况下盲目运行技能。执行前也可以调用 list_skills、list_data_files 复核。
+1. 当前的系统是windows 64位。数据输入文件夹为项目根目录下的相对路径 data/。读取文件只能读取项目内的文件(同级及以下)。
+2. 在调用 execute_skill 前，先用 read_project_file 读取技能所在目录下的说明文件。
+   - 特别注意：scRNA-skills 相关模块需调用 R 解释器（`env/R-4.6.2/bin/Rscript.exe`）运行。
 3. 运行任务规则：
-   - 专门/定制技能任务（即计划中指定了 `skill` 字段且不为空）：必须调用 `execute_skill(skill_file, args, step_id)` 执行。
-   - 日常/通用任务（如写文件、执行通用命令行指令，计划中 `skill` 为空）：
-     - 日常写文件任务（计划中指定了 `write_file_path`）：必须直接调用 `write_workspace_file(path, content, step_id)` 将内容写入目标路径。
-     - 执行通用命令或运行本地脚本：直接调用 `execute_workspace_command(cmd, step_id)` 执行（运行 Python 脚本时，必须使用相对地址 env/python-3.12.10-embed-amd64/python.exe，如 env/python-3.12.10-embed-amd64/python.exe script.py）。
-4. 所有输出必须在环境变量 OUTPUT_DIR 指向的目录，或显式写入 {run['output_dir']}。
-5. 每个步骤完成后调用 scan_output_files。
-6. 最终输出 Markdown 报告，包含已执行步骤、输出文件链接、错误或建议。
-7. PNG 图片可用 ![title](/output/username/run_id/xxx.png)。
-8. CSV/TSV 可用 [下载表格](/output/username/run_id/xxx.csv)。
-9. 【路径与工作区解析说明】
-   - 使用 `write_workspace_file` 写入相对路径文件时，系统会自动将其拼接到当前运行的 `OUTPUT_DIR`。
-   - 使用 `execute_workspace_command` 执行命令时，其当前工作目录（cwd）是当前 session 对应的工作区。运行该目录下的脚本时，必须使用内部的 Python 解释器相对路径 `env/python-3.12.10-embed-amd64/python.exe`（例如执行 `env/python-3.12.10-embed-amd64/python.exe script.py`）。
-10. 【重要：失败处理规则】
-    - 如果任何步骤（无论是由 `execute_skill`、`write_workspace_file` 还是 `execute_workspace_command` 执行）返回了失败（非 0 退出码、报错、超时或系统异常等），你必须【立刻停止】所有后续步骤的执行。
-    - **严禁**尝试自行编写代码/脚本来安装 Python 包、修复系统环境或在当前运行中进行盲目的重试和调试。
-    - 你应当立即结束工具调用，将已执行步骤的状态、具体错误原因（如 STDERR 和错误分类建议）整理成 Markdown 报告输出给用户，明确告知用户失败并【询问用户的意见/指示】（例如询问是否需要尝试其他方案，或让用户在环境中手动安装缺失包）。
+   - 技能任务（`skill` 不为空）：必须调用 `execute_skill(skill_file, args, step_id)`。
+   - 日常写文件任务（`write_file_path` 不为空）：必须调用 `write_workspace_file(path, content, step_id)`。
+   - 通用命令或脚本：必须调用 `execute_workspace_command(cmd, step_id)`。执行 Python 脚本时，必须使用内部解释器相对路径 `env/python-3.12.10-embed-amd64/python.exe`。
+4. 失败处理：如果任何步骤出现错误，请分析原因修改再尝试，最多五次。五次不行则停止，禁止更改环境安装包等。
+5. 系统会自动获取日志和收集产出文件并追加到最终报告中，你只需关注执行步骤和分析错误，完成后直接输出简要结束语即可，不需要自己生成长篇报告。
 """.strip()
 
     try:
@@ -169,23 +153,41 @@ Preflight:
                 skills.read_project_file,
                 skills.execute_skill,
                 skills.write_workspace_file,
-                skills.execute_workspace_command,
-                skills.scan_output_files,
-                skills.save_analysis_report
+                skills.execute_workspace_command
             ],
         )
 
-        result = await run_in_threadpool(Runner.run_sync, agent, prompt, max_turns=int(cfg.get("max_turns", 30)))
+        result = await run_in_threadpool(Runner.run_sync, agent, prompt, max_turns=int(cfg.get("max_turns", 30)), conversation_id=run["session_id"])
 
         if state.abort_flag:
             raise RuntimeError("User Aborted")
 
         output = result.final_output or ""
-        run["output"] = output
         run["ended_at"] = utils.utc_now()
         run_manager.scan_run_artifacts(run)
 
         any_failed = any(step.get("status") == "failed" for step in run.get("plan", {}).get("steps", []))
+
+        # 自动生成常规报告和日志汇总
+        report_lines = ["\n\n### 📊 运行报告 (自动生成)\n"]
+        for step in run.get("plan", {}).get("steps", []):
+            status = step.get("status", "pending")
+            report_lines.append(f"- **{step.get('title', '未知步骤')}**: {status}")
+            if step.get("message"):
+                report_lines.append(f"  - 详情: {step.get('message')}")
+                
+        if run.get("artifacts"):
+            report_lines.append("\n#### 📄 产出文件\n")
+            for a in run["artifacts"]:
+                report_lines.append(f"- [{a['name']}]({a['url']})")
+                
+        if any_failed and run.get("error_classification"):
+            report_lines.append("\n#### ❌ 错误信息\n")
+            report_lines.append(f"```json\n{json.dumps(run['error_classification'], ensure_ascii=False, indent=2)}\n```")
+
+        output = output + "\n" + "\n".join(report_lines)
+        run["output"] = output
+
         if any_failed:
             run["status"] = "failed"
             run_manager.event(run, "run", "complete", "failed", "Run completed with step failure(s)")

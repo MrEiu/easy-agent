@@ -9,11 +9,13 @@ from agents import set_default_openai_api, set_tracing_disabled
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
-SKILL_DIR = BASE_DIR / "skill"
-DATA_DIR = BASE_DIR / "data"
-OUTPUT_DIR = BASE_DIR / "output"
-PLOTS_DIR = BASE_DIR / "plots"
-CHATLOG_DIR = BASE_DIR / "chatlog"
+PROJECT_DIR = Path(os.getenv("OPENAIQAQ_WORKDIR", str(BASE_DIR))).resolve()
+
+SKILL_DIR = PROJECT_DIR / "skill"
+DATA_DIR = PROJECT_DIR / "data"
+OUTPUT_DIR = PROJECT_DIR / "output"
+PLOTS_DIR = PROJECT_DIR / "plots"
+CHATLOG_DIR = PROJECT_DIR / "chatlog"
 WORKSPACE_DIR = OUTPUT_DIR
 
 EMBED_PYTHON_DIR = BASE_DIR / "env" / "python-3.12.10-embed-amd64"
@@ -45,7 +47,10 @@ def load_json_file_simple(path: Path, default: Any) -> Any:
         return default
 
 def load_agent_config() -> Dict[str, Any]:
-    cfg = load_json_file_simple(BASE_DIR / "agent.json", {})
+    cfg = load_json_file_simple(PROJECT_DIR / "agent.json", {})
+    if not isinstance(cfg, dict) or not cfg:
+        # Fallback to BASE_DIR if not found in PROJECT_DIR
+        cfg = load_json_file_simple(BASE_DIR / "agent.json", {})
     if not isinstance(cfg, dict):
         cfg = {}
     default = {

@@ -1,4 +1,17 @@
 import os
+import argparse
+import sys
+
+# 解析参数
+parser = argparse.ArgumentParser(description="Skill Orchestrator API Server")
+parser.add_argument("--dir", type=str, default="", help="设置项目总地址(包含 data/ 和 skill/ 等目录)。默认自动获取当前代码父文件夹地址。")
+parser.add_argument("--host", type=str, default="127.0.0.1", help="API server host")
+parser.add_argument("--port", type=int, default=8000, help="API server port")
+args, unknown = parser.parse_known_args()
+
+if args.dir:
+    os.environ["OPENAIQAQ_WORKDIR"] = os.path.abspath(args.dir)
+
 import uvicorn
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
@@ -44,7 +57,7 @@ if __name__ == "__main__":
     )
     
     try:
-        uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8000")))
+        uvicorn.run(app, host=args.host or os.getenv("HOST", "127.0.0.1"), port=args.port or int(os.getenv("PORT", "8000")))
     finally:
         print("正在停止资源管理器服务...")
         explorer_process.terminate()

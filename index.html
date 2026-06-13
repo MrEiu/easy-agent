@@ -275,7 +275,11 @@
 
         <div class="flex-1 overflow-y-auto p-5 pb-32 space-y-6" id="chat-history-container"></div>
 
-        <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/95 to-transparent z-30">
+        <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/95 to-transparent z-30 flex flex-col gap-2">
+            <div class="flex items-center space-x-2 px-1">
+                <input id="plan-switch" type="checkbox" checked class="w-3.5 h-3.5 accent-indigo-500 rounded border-white/10 bg-[#111] cursor-pointer" />
+                <label for="plan-switch" class="text-[11px] text-gray-400 select-none cursor-pointer hover:text-gray-300">生成规划并逐步确认 (Enable Planning & Step Confirmation)</label>
+            </div>
             <div class="relative flex items-end shadow-xl shadow-black/50">
                 <textarea id="user-query-input" rows="1" placeholder="Describe the pipeline steps..." class="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-10 py-3 text-[13px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500/50 focus:bg-[#161616] transition-all resize-none max-h-32 leading-relaxed" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"></textarea>
                 <button id="run-btn" onclick="toggleAction()" class="absolute right-2 bottom-2 p-1.5 rounded-lg text-gray-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all">
@@ -307,7 +311,7 @@
                     <option value="all">all</option>
                     <option value="workspace">workspace</option>
                     <option value="output">output</option>
-                    <option value="data">data</option>
+                    <option value="data">data (相对路径: data/)</option>
                     <option value="skill">skill</option>
                 </select>
                 <button onclick="triggerDataUpload()" class="text-[11px] text-gray-500 hover:text-emerald-300 px-2 py-1 rounded hover:bg-white/5">Upload Data</button>
@@ -327,7 +331,10 @@
         <div class="flex-1 min-h-0 flex bg-[#000]">
             <aside id="workspace-explorer" class="w-64 shrink-0 border-r panel-divider bg-[#050505] flex flex-col">
                 <div class="h-9 border-b panel-divider flex items-center justify-between px-3">
-                    <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Artifacts Explorer</span>
+                    <div class="flex items-center space-x-1.5">
+                        <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Artifacts Explorer</span>
+                        <span class="text-[9px] text-indigo-400 bg-indigo-500/10 px-1 py-0.5 rounded mono border border-indigo-500/20" title="相对数据路径: data/">data/</span>
+                    </div>
                     <div class="flex items-center gap-2">
                         <button onclick="toggleExpandAll()" class="text-gray-600 hover:text-gray-300" title="展开/折叠全部">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M8 9l4-4 4 4m0 6l-4 4-4-4"/></svg>
@@ -853,7 +860,7 @@ function mergeArtifacts(current, incoming) {
 
 function renderRunCard(runId) {
     const run = getRun(runId);
-    const el = document.getElementById(`run-card-${runId}`);
+    const el = document.getElementById(`run-card-${runId}-${run.aiMsgId}`) || document.getElementById(`run-card-${runId}`);
     if (!run || !el) return;
 
     const statusText = {
@@ -891,7 +898,7 @@ function renderRunCard(runId) {
                 <div class="text-[12px] text-gray-300 mt-1 truncate">${escapeHtml(run.query)}</div>
             </div>
             <div class="text-right shrink-0">
-                <div class="mono text-[12px] text-gray-300" id="run-duration-${run.id}">${duration}</div>
+                <div class="mono text-[12px] text-gray-300" id="run-duration-${run.id}-${run.aiMsgId}">${duration}</div>
                 <div class="text-[10px] text-gray-600">${new Date(run.startedAt).toLocaleTimeString()}</div>
             </div>
         </div>
@@ -910,13 +917,13 @@ function renderRunCard(runId) {
 
 function renderRunCardShell(run) {
     return `
-        <div class="flex space-x-3 group w-full" id="run-msg-${run.id}">
+        <div class="flex space-x-3 group w-full" id="run-msg-${run.id}-${run.aiMsgId}">
             <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border bg-amber-500/10 border-amber-500/20 mt-0.5">
                 <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
             </div>
             <div class="flex-1 min-w-0">
                 <div class="text-[11px] font-semibold text-gray-300 mb-2">Run</div>
-                <div id="run-card-${run.id}" class="run-card running"></div>
+                <div id="run-card-${run.id}-${run.aiMsgId}" class="run-card running"></div>
             </div>
         </div>`;
 }
@@ -1002,7 +1009,7 @@ async function toggleAction() {
     timerInterval = setInterval(() => {
         const tBox = document.getElementById(`timer-${currentAiMsgId}`);
         if (tBox) tBox.innerText = formatDuration(Date.now() - startTime);
-        const runDuration = document.getElementById(`run-duration-${run.id}`);
+        const runDuration = document.getElementById(`run-duration-${run.id}-${run.aiMsgId}`) || document.getElementById(`run-duration-${run.id}`);
         if (runDuration) runDuration.innerText = formatDuration(Date.now() - run.startedAt);
     }, 100);
 
@@ -2332,7 +2339,7 @@ async function confirmRun(runId) {
     timerInterval = setInterval(() => {
         const tBox = document.getElementById(`timer-${currentAiMsgId}`);
         if (tBox) tBox.innerText = formatDuration(Date.now() - startTime);
-        const runDuration = document.getElementById(`run-duration-${run.id}`);
+        const runDuration = document.getElementById(`run-duration-${run.id}-${run.aiMsgId}`) || document.getElementById(`run-duration-${run.id}`);
         if (runDuration) runDuration.innerText = formatDuration(Date.now() - run.startedAt);
     }, 100);
 

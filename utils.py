@@ -157,7 +157,20 @@ def resolve_public_path(public_path: str) -> Path:
         return safe_join(config.PLOTS_DIR, p.replace("/plots/", "", 1).replace("plots/", "", 1))
     if p.startswith("/chatlog/") or p.startswith("chatlog/"):
         return safe_join(config.CHATLOG_DIR, p.replace("/chatlog/", "", 1).replace("chatlog/", "", 1))
-    raise ValueError("仅允许访问 /workspace、/skill、/data、/output、/plots、/chatlog 下的文件")
+    
+    # 备选路径解析支持 (Fallback resolution for prefix-free relative paths)
+    if state.active_run_id and state.active_run_id in state.RUNS:
+        run = state.RUNS[state.active_run_id]
+        workplace = Path(run["output_abs_dir"]) / "workplace"
+        try:
+            return safe_join(workplace, p)
+        except ValueError:
+            pass
+
+    try:
+        return safe_join(config.BASE_DIR, p)
+    except ValueError:
+        raise ValueError("仅允许访问 /workspace、/skill、/data、/output、/plots、/chatlog 下的文件或项目内相对路径")
 
 
 def file_type(path: Path) -> str:

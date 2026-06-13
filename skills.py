@@ -213,9 +213,9 @@ async def create_plan_with_agent(query: str, session_id: str, username: str, run
     prompt = f"""
 你是通用 skill 编排规划器。你只能输出 JSON，不要输出 Markdown。
 
-目录:
-- /skill: 技能
-- /data: 数据
+目录与路径说明:
+- skill/: 技能文件夹（位于项目根目录下的相对路径，如 skill/scRNA-skills）
+- data/: 数据文件夹（位于项目根目录下的相对路径）
 - 当前输出目录: {run['output_dir']}
 
 用户目标:
@@ -239,19 +239,20 @@ async def create_plan_with_agent(query: str, session_id: str, username: str, run
       "id": "step_1",
       "title": "简短标题",
       "description": "做什么",
-      "skill": "如果有可用且匹配的领域专用技能文件，填写其相对 /skill 的路径（如 scRNA-skills/run.py）；若是日常通用任务（如写文件、执行通用命令行指令），此处必须留空 (\"\")",
-      "args": "命令行参数或命令。如果 skill 为空但需要执行通用命令行指令，则此处填写要执行的 Shell 命令（运行 Python 脚本时必须使用相对地址 env/python-3.12.10-embed-amd64/python.exe，例如 env/python-3.12.10-embed-amd64/python.exe draw.py）；如果是技能任务，则填写技能所需的命令行参数",
-      "write_file_path": "可选。如果是日常写文件任务，填写待写入的目标文件相对路径（如 script.py）",
-      "write_file_content": "可选。如果是日常写文件任务，填写待写入的完整文件内容",
+      "skill": "如果有可用且匹配的专用技能文件，填写其相对 skill/ 的路径（如 scRNA-skills/run.py）；若是日常通用任务，此处必须留空 (\"\")",
+      "args": "命令行参数或命令。如果 skill 为空但需要执行通用命令行指令，填写要执行的命令；若是技能任务，填写技能所需的命令行参数",
+      "write_file_path": "可选。若是日常写文件任务，填写待写入的目标文件相对路径",
+      "write_file_content": "可选。若是日常写文件任务，填写待写入的完整文件内容",
       "expected_outputs": ["/output/..."]
     }}
   ]
 }}
 
 要求:
-1. 区分领域专用技能与日常任务。日常通用任务（如新建/写入代码文件、执行简单 Python 脚本/Shell 命令行）请勿使用任何 skill（即 skill 设为空字符串 `""`），直接通过配置 args（运行命令，注意运行 Python 脚本时必须使用相对路径的内置 Python 解释器 env/python-3.12.10-embed-amd64/python.exe）或 write_file_path/write_file_content（写入文件）来描述。
-2. 只有特定或复杂的领域级专业操作（如 scRNA 测序分析等）才匹配并调用具体的专用 skill 脚本。
-3. 所有输出必须进入当前输出目录或其子目录。
+1. 区分领域专用技能与日常任务。日常通用任务请勿使用任何 skill（设为 `""`）。
+2. 闲聊与咨询：如果不需要执行工具，步骤规划为空列表（steps 为 []），requires_confirmation 设为 false。
+3. 复杂任务拆分：如涉及多个不同模块，必须拆分为多个独立步骤。
+4. 路径要求：使用相对路径访问 data/ 和 skill/。
 """.strip()
 
     planner = Agent(
@@ -261,7 +262,7 @@ async def create_plan_with_agent(query: str, session_id: str, username: str, run
         tools=[],
     )
     try:
-        result = await run_in_threadpool(Runner.run_sync, planner, prompt, max_turns=3)
+        result = await run_in_threadpool(Runner.run_sync, planner, prompt, max_turns=3, conversation_id=session_id)
         data = extract_json_object(result.final_output or "")
         if isinstance(data, dict) and isinstance(data.get("steps"), list):
             return data
@@ -319,8 +320,134 @@ def classify_error(stderr: str, stdout: str = "", returncode: Optional[int] = No
 # ============================================================
 # Tool functions used by Agent during run_plan
 # ============================================================
+def read_xlsx_summary(file_path: Path, max_rows: int = 15) -> str:
+    import zipfile
+    import xml.etree.ElementTree as ET
+    try:
+        with zipfile.ZipFile(file_path, 'r') as z:
+            wb_xml = z.read('xl/workbook.xml')
+            wb_tree = ET.fromstring(wb_xml)
+            ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+                  'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'}
+            
+            sheets = []
+            for sheet in wb_tree.findall('.//ns:sheet', ns):
+                sheets.append({
+                    'name': sheet.attrib.get('name'),
+                    'id': sheet.attrib.get('sheetId'),
+                    'r_id': sheet.attrib.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
+                })
+            
+            shared_strings = []
+            if 'xl/sharedStrings.xml' in z.namelist():
+                ss_xml = z.read('xl/sharedStrings.xml')
+                ss_tree = ET.fromstring(ss_xml)
+                for t in ss_tree.findall('.//ns:t', ns):
+                    shared_strings.append(t.text or '')
+            
+            summary = []
+            summary.append(f"【Excel 预览】文件: {file_path.name}")
+            summary.append(f"工作表列表 (Sheets): {', '.join([s['name'] for s in sheets])}\n")
+            
+            for idx, sheet in enumerate(sheets[:2]): # Preview at most first 2 sheets
+                sheet_name = sheet['name']
+                sheet_file = f"xl/worksheets/sheet{idx+1}.xml"
+                if sheet_file not in z.namelist():
+                    sheet_files = [f for f in z.namelist() if f.startswith("xl/worksheets/sheet")]
+                    if len(sheet_files) > idx:
+                        sheet_file = sheet_files[idx]
+                    else:
+                        continue
+                
+                sheet_xml = z.read(sheet_file)
+                sheet_tree = ET.fromstring(sheet_xml)
+                
+                rows_dict = {}
+                for row_elem in sheet_tree.findall('.//ns:row', ns):
+                    row_idx = int(row_elem.attrib.get('r', 1))
+                    row_data = {}
+                    for c_elem in row_elem.findall('.//ns:c', ns):
+                        cell_ref = c_elem.attrib.get('r', '')
+                        col_letter = ''.join(filter(str.isalpha, cell_ref))
+                        
+                        val_elem = c_elem.find('ns:v', ns)
+                        val = val_elem.text if val_elem is not None else ''
+                        
+                        t = c_elem.attrib.get('t', '')
+                        if t == 's' and val:
+                            try:
+                                val = shared_strings[int(val)]
+                            except (ValueError, IndexError):
+                                pass
+                        elif t == 'b' and val:
+                            val = 'TRUE' if val == '1' else 'FALSE'
+                        row_data[col_letter] = val
+                    rows_dict[row_idx] = row_data
+                
+                if not rows_dict:
+                    summary.append(f"### 工作表 (Sheet): {sheet_name} (空)\n")
+                    continue
+                
+                all_cols = set()
+                for rd in rows_dict.values():
+                    all_cols.update(rd.keys())
+                
+                sorted_cols = sorted(list(all_cols), key=lambda x: (len(x), x))
+                
+                summary.append(f"### 工作表 (Sheet): {sheet_name} (前 {max_rows} 行预览)")
+                summary.append("| " + " | ".join(sorted_cols) + " |")
+                summary.append("| " + " | ".join(["---"] * len(sorted_cols)) + " |")
+                
+                for r_i in sorted(rows_dict.keys())[:max_rows]:
+                    row_cells = []
+                    for col in sorted_cols:
+                        row_cells.append(str(rows_dict[r_i].get(col, '')).strip().replace('\n', ' ').replace('|', '\\|'))
+                    summary.append("| " + " | ".join(row_cells) + " |")
+                summary.append("")
+                
+            return "\n".join(summary)
+    except Exception as e:
+        return f"读取 Excel 文件失败 {file_path.name}: {e}"
+
+
+def read_csv_summary(file_path: Path, delimiter: str, max_rows: int = 15) -> str:
+    import csv
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f, delimiter=delimiter)
+            rows = []
+            for i, row in enumerate(reader):
+                if i >= max_rows:
+                    break
+                rows.append(row)
+        
+        if not rows:
+            return f"文件 {file_path.name} 为空表格。"
+            
+        summary = []
+        summary.append(f"【表格预览】文件: {file_path.name} (前 {max_rows} 行)")
+        headers = rows[0]
+        summary.append("| " + " | ".join(headers) + " |")
+        summary.append("| " + " | ".join(["---"] * len(headers)) + " |")
+        for row in rows[1:]:
+            padded_row = row + [""] * (len(headers) - len(row))
+            summary.append("| " + " | ".join([val.replace('\n', ' ').replace('|', '\\|').strip() for val in padded_row]) + " |")
+        return "\n".join(summary)
+    except Exception as e:
+        return f"读取表格失败 {file_path.name}: {e}"
+
+
 @function_tool
 def list_skills(sub_dir: str = "") -> str:
+    """
+    List all available scRNA-seq analysis or other workflow skill scripts inside the /skill directory.
+    
+    Args:
+        sub_dir: Optional subdirectory under /skill to narrow down the search (e.g., 'scRNA-skills').
+        
+    Returns:
+        A JSON string containing the metadata of all discovered skills (ID, name, description, script file path, runtime, params_schema).
+    """
     skills = discover_skills()
     if sub_dir:
         skills = [s for s in skills if s["path"].startswith(sub_dir)]
@@ -329,23 +456,54 @@ def list_skills(sub_dir: str = "") -> str:
 
 @function_tool
 def list_data_files(sub_dir: str = "") -> str:
+    """
+    List all data files inside the data directory (relative path 'data/').
+    
+    Args:
+        sub_dir: Optional subdirectory inside the data directory to search (e.g. 'subfolder').
+        
+    Returns:
+        A JSON string containing the list of files, including relative paths starting with 'data/', size in bytes, and file types.
+    """
     base = utils.safe_join(config.DATA_DIR, sub_dir)
     files = []
     if base.exists():
         for p in base.rglob("*"):
             if p.is_file() and not utils.match_ignore(p, config.DATA_DIR):
-                files.append({"path": utils.rel_public_path(p), "size": p.stat().st_size, "type": utils.file_type(p)})
+                try:
+                    rel_path = "data/" + p.relative_to(config.DATA_DIR).as_posix()
+                except Exception:
+                    rel_path = utils.rel_public_path(p).lstrip("/")
+                files.append({"path": rel_path, "size": p.stat().st_size, "type": utils.file_type(p)})
     return json.dumps(files[:500], ensure_ascii=False, indent=2)
 
 
 @function_tool
 def read_project_file(file_path: str) -> str:
+    """
+    Read the content of a text, CSV/TSV table, or Excel (.xlsx) file in the project workspace, skills, or data directory.
+    If the file is a CSV, TSV, or Excel file, it is automatically parsed and formatted as a clean Markdown table preview.
+    
+    Args:
+        file_path: Relative path of the file to read (e.g., 'data/pbmc4k_annotation.xlsx', 'skill/scRNA-skills/README.md').
+        
+    Returns:
+        The file text content (up to 20,000 characters), or a formatted Markdown table preview for tabular/Excel files, or an error message.
+    """
     try:
         p = utils.resolve_public_path(file_path)
         if not p.exists() or not p.is_file():
             return f"未找到文件: {file_path}"
-        if p.suffix.lower() not in config.TEXT_PREVIEW_EXT:
-            return f"非文本文件，不直接读取: {file_path}"
+            
+        ext = p.suffix.lower()
+        if ext == ".xlsx":
+            return read_xlsx_summary(p)
+        if ext in {".csv", ".tsv"}:
+            delimiter = "\t" if ext == ".tsv" else ","
+            return read_csv_summary(p, delimiter)
+            
+        if ext not in config.TEXT_PREVIEW_EXT:
+            return f"非文本或不支持的预览文件类型，不直接读取: {file_path}"
         if p.stat().st_size > 2_000_000:
             return f"文件过大，不直接读取: {file_path}"
         content = p.read_text(encoding="utf-8", errors="ignore")
@@ -356,6 +514,16 @@ def read_project_file(file_path: str) -> str:
 
 @function_tool
 def save_analysis_report(filename: str, content: str) -> str:
+    """
+    Save the final analysis report (normally in markdown format) to the active run's output directory.
+    
+    Args:
+        filename: The filename for the report (e.g., 'report.md').
+        content: The text/markdown content of the report.
+        
+    Returns:
+        A confirmation message containing the public URL path to the saved file.
+    """
     rid = state.active_run_id
     if not rid or rid not in state.RUNS:
         return "没有 active run。"
@@ -389,11 +557,31 @@ def scan_output_files_impl(sub_dir: str = "") -> str:
 
 @function_tool
 def scan_output_files(sub_dir: str = "") -> str:
+    """
+    Scan for newly generated output files inside the current run workplace directory so they are registered as artifacts.
+    
+    Args:
+        sub_dir: Optional subdirectory under the run workplace to scan.
+        
+    Returns:
+        A text report listing all newly discovered files or a message indicating no files were found.
+    """
     return scan_output_files_impl(sub_dir)
 
 
 @function_tool
 def write_workspace_file(path: str, content: str, step_id: str = "") -> str:
+    """
+    Create or overwrite a file in the active run's workspace.
+    
+    Args:
+        path: Relative path of the file to write (e.g., 'script.py', 'parameters.json').
+        content: The text content to write into the file.
+        step_id: Optional step ID to update the plan progress status.
+        
+    Returns:
+        A success or failure message.
+    """
     if state.abort_flag:
         return "操作已中断"
     rid = state.active_run_id
@@ -429,6 +617,19 @@ def write_workspace_file(path: str, content: str, step_id: str = "") -> str:
 
 @function_tool
 def execute_workspace_command(cmd: str, timeout_seconds: int = 1200, step_id: str = "") -> str:
+    """
+    Execute a shell command in the active run's workspace.
+    When running Python scripts, you MUST use the internal relative Python interpreter:
+    'env/python-3.12.10-embed-amd64/python.exe' (e.g., 'env/python-3.12.10-embed-amd64/python.exe script.py --arg1').
+    
+    Args:
+        cmd: The exact shell command string to execute.
+        timeout_seconds: Timeout limit for command execution in seconds (defaults to 1200).
+        step_id: Optional step ID to update the plan progress status.
+        
+    Returns:
+        Stdout and stderr outputs of the execution, or an error description.
+    """
     if state.abort_flag:
         return "操作已中断"
     rid = state.active_run_id
@@ -522,6 +723,19 @@ def execute_workspace_command(cmd: str, timeout_seconds: int = 1200, step_id: st
 
 @function_tool
 def execute_skill(skill_file: str, args: str = "", timeout_seconds: int = 1200, step_id: str = "") -> str:
+    """
+    Run a specific pre-defined skill script from the /skill directory.
+    Before invoking a skill, make sure you read its README/description documentation to understand its arguments.
+    
+    Args:
+        skill_file: The relative file path of the skill script under /skill (e.g., 'scRNA-skills/seurat_qc.r').
+        args: Command-line arguments to pass to the skill script.
+        timeout_seconds: Timeout limit for execution in seconds (defaults to 1200).
+        step_id: Optional step ID to update the plan progress status.
+        
+    Returns:
+        Execution stdout/stderr outputs or error logs.
+    """
     if state.abort_flag:
         return "操作已中断"
     rid = state.active_run_id

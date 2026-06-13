@@ -30,7 +30,7 @@ def session_chatlog_path(username: str, session_id: str) -> Path:
 
 def create_run_context(session_id: str, username: str, query: str, client_run_id: Optional[str] = None) -> Dict[str, Any]:
     username = utils.sanitize_username(username)
-    run_id = utils.safe_id(client_run_id, "run") if client_run_id else f"run_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    run_id = session_id
     out_dir = utils.run_output_dir(username, session_id)
     for sub in ("params", "logs", "artifacts", "temp"):
         (out_dir / sub).mkdir(parents=True, exist_ok=True)

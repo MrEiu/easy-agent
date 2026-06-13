@@ -240,7 +240,7 @@ async def create_plan_with_agent(query: str, session_id: str, username: str, run
       "title": "简短标题",
       "description": "做什么",
       "skill": "如果有可用且匹配的领域专用技能文件，填写其相对 /skill 的路径（如 scRNA-skills/run.py）；若是日常通用任务（如写文件、执行通用命令行指令），此处必须留空 (\"\")",
-      "args": "命令行参数或命令。如果 skill 为空但需要执行通用命令行指令，则此处填写要执行的 Shell 命令（如 python draw.py）；如果是技能任务，则填写技能所需的命令行参数",
+      "args": "命令行参数或命令。如果 skill 为空但需要执行通用命令行指令，则此处填写要执行的 Shell 命令（运行 Python 脚本时必须使用相对地址 env/python-3.12.10-embed-amd64/python.exe，例如 env/python-3.12.10-embed-amd64/python.exe draw.py）；如果是技能任务，则填写技能所需的命令行参数",
       "write_file_path": "可选。如果是日常写文件任务，填写待写入的目标文件相对路径（如 script.py）",
       "write_file_content": "可选。如果是日常写文件任务，填写待写入的完整文件内容",
       "expected_outputs": ["/output/..."]
@@ -249,7 +249,7 @@ async def create_plan_with_agent(query: str, session_id: str, username: str, run
 }}
 
 要求:
-1. 区分领域专用技能与日常任务。日常通用任务（如新建/写入代码文件、执行简单 Python 脚本/Shell 命令行）请勿使用任何 skill（即 skill 设为空字符串 `""`），直接通过配置 args（运行命令）或 write_file_path/write_file_content（写入文件）来描述。
+1. 区分领域专用技能与日常任务。日常通用任务（如新建/写入代码文件、执行简单 Python 脚本/Shell 命令行）请勿使用任何 skill（即 skill 设为空字符串 `""`），直接通过配置 args（运行命令，注意运行 Python 脚本时必须使用相对路径的内置 Python 解释器 env/python-3.12.10-embed-amd64/python.exe）或 write_file_path/write_file_content（写入文件）来描述。
 2. 只有特定或复杂的领域级专业操作（如 scRNA 测序分析等）才匹配并调用具体的专用 skill 脚本。
 3. 所有输出必须进入当前输出目录或其子目录。
 """.strip()
@@ -408,8 +408,8 @@ def write_workspace_file(path: str, content: str, step_id: str = "") -> str:
     try:
         target_path = Path(path)
         if not target_path.is_absolute():
-            output_dir = run["output_abs_dir"]
-            target_path = (Path(output_dir) / target_path).resolve()
+            session_workspace = run_manager.get_session_workspace(run["username"], run["session_id"])
+            target_path = (session_workspace / target_path).resolve()
         
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(content, encoding='utf-8')

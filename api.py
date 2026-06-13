@@ -143,7 +143,7 @@ Preflight:
    - 专门/定制技能任务（即计划中指定了 `skill` 字段且不为空）：必须调用 `execute_skill(skill_file, args, step_id)` 执行。
    - 日常/通用任务（如写文件、执行通用命令行指令，计划中 `skill` 为空）：
      - 日常写文件任务（计划中指定了 `write_file_path`）：必须直接调用 `write_workspace_file(path, content, step_id)` 将内容写入目标路径。
-     - 执行通用命令或运行本地脚本：直接调用 `execute_workspace_command(cmd, step_id)` 执行。
+     - 执行通用命令或运行本地脚本：直接调用 `execute_workspace_command(cmd, step_id)` 执行（运行 Python 脚本时，必须使用相对地址 env/python-3.12.10-embed-amd64/python.exe，如 env/python-3.12.10-embed-amd64/python.exe script.py）。
 4. 所有输出必须在环境变量 OUTPUT_DIR 指向的目录，或显式写入 {run['output_dir']}。
 5. 每个步骤完成后调用 scan_output_files。
 6. 最终输出 Markdown 报告，包含已执行步骤、输出文件链接、错误或建议。
@@ -151,7 +151,7 @@ Preflight:
 8. CSV/TSV 可用 [下载表格](/output/username/run_id/xxx.csv)。
 9. 【路径与工作区解析说明】
    - 使用 `write_workspace_file` 写入相对路径文件时，系统会自动将其拼接到当前运行的 `OUTPUT_DIR`。
-   - 使用 `execute_workspace_command` 执行命令时，其当前工作目录（cwd）是当前 session 对应的工作区。运行该目录下的脚本直接执行 `python script.py` 即可。
+   - 使用 `execute_workspace_command` 执行命令时，其当前工作目录（cwd）是当前 session 对应的工作区。运行该目录下的脚本时，必须使用内部的 Python 解释器相对路径 `env/python-3.12.10-embed-amd64/python.exe`（例如执行 `env/python-3.12.10-embed-amd64/python.exe script.py`）。
 10. 【重要：失败处理规则】
     - 如果任何步骤（无论是由 `execute_skill`、`write_workspace_file` 还是 `execute_workspace_command` 执行）返回了失败（非 0 退出码、报错、超时或系统异常等），你必须【立刻停止】所有后续步骤的执行。
     - **严禁**尝试自行编写代码/脚本来安装 Python 包、修复系统环境或在当前运行中进行盲目的重试和调试。

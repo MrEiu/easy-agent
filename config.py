@@ -14,12 +14,12 @@ DATA_DIR = BASE_DIR / "data"
 OUTPUT_DIR = BASE_DIR / "output"
 PLOTS_DIR = BASE_DIR / "plots"
 CHATLOG_DIR = BASE_DIR / "chatlog"
-WORKSPACE_DIR = BASE_DIR / "workspace"
+WORKSPACE_DIR = OUTPUT_DIR
 
 EMBED_PYTHON_DIR = BASE_DIR / "env" / "python-3.12.10-embed-amd64"
 PYTHON_EXE = EMBED_PYTHON_DIR / "python.exe" if (EMBED_PYTHON_DIR / "python.exe").exists() else Path(sys.executable)
 
-for d in (SKILL_DIR, DATA_DIR, OUTPUT_DIR, PLOTS_DIR, CHATLOG_DIR, WORKSPACE_DIR):
+for d in (SKILL_DIR, DATA_DIR, OUTPUT_DIR, PLOTS_DIR, CHATLOG_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_IGNORE = {

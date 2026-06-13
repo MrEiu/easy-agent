@@ -481,7 +481,7 @@ let latestApiTraces = [];
 let workspaceView = 'explorer';
 let openedFiles = [];
 let activeFilePath = null;
-let collapsedFolders = new Set(JSON.parse(localStorage.getItem('scrna_collapsed_folders_v1') || '["run", "run:"]'));
+let collapsedFolders = new Set(JSON.parse(localStorage.getItem('scrna_collapsed_folders_v1') || '["run", "run:", "data", "data:"]'));
 
 let settings = loadSettings();
 let currentUser = loadCurrentUser();
@@ -509,6 +509,7 @@ marked.use({ renderer });
 
 window.addEventListener('load', async () => {
     initResizableLayout();
+    initDragAndDrop();
     applySettingsToUI();
     await loadIgnoreRules();
     switchSession(activeSessionId);
@@ -1408,6 +1409,12 @@ function renderFileTree(runFilterId = null) {
         localStorage.setItem('scrna_collapsed_folders_v1', JSON.stringify(Array.from(collapsedFolders)));
         localStorage.setItem('scrna_folder_run_collapsed_v1', 'true');
     }
+    if (!localStorage.getItem('scrna_folder_data_collapsed_v1')) {
+        collapsedFolders.add('data');
+        collapsedFolders.add('data:');
+        localStorage.setItem('scrna_collapsed_folders_v1', JSON.stringify(Array.from(collapsedFolders)));
+        localStorage.setItem('scrna_folder_data_collapsed_v1', 'true');
+    }
     treeEl.innerHTML = renderTreeNode(tree, 0);
 }
 
@@ -1427,7 +1434,7 @@ function renderTreeNode(node, depth) {
         const pathKey = escapeAttr(file.path);
         const active = activeFilePath === file.path ? 'active' : '';
         return `
-            <button class="file-row ${active} w-full flex items-center gap-1.5 px-2 py-1 rounded text-left text-[11px] text-gray-400" style="padding-left:${depth * 12 + 8}px" onclick="openFileByPath('${pathKey}')">
+            <button draggable="true" ondragstart="event.dataTransfer.setData('text/plain', '${pathKey}')" class="file-row ${active} w-full flex items-center gap-1.5 px-2 py-1 rounded text-left text-[11px] text-gray-400" style="padding-left:${depth * 12 + 8}px" onclick="openFileByPath('${pathKey}')">
                 ${icon}
                 <span class="truncate">${escapeHtml(file.name || node.name)}</span>
             </button>`;
@@ -1863,6 +1870,39 @@ function initResizableLayout() {
             window.addEventListener('mousemove', onMove);
             window.addEventListener('mouseup', onUp);
         });
+    });
+}
+
+function initDragAndDrop() {
+    const textarea = document.getElementById('user-query-input');
+    if (!textarea) return;
+
+    textarea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        textarea.classList.add('border-indigo-500/80');
+        textarea.classList.add('bg-[#1a1a1a]');
+    });
+
+    textarea.addEventListener('dragleave', () => {
+        textarea.classList.remove('border-indigo-500/80');
+        textarea.classList.remove('bg-[#1a1a1a]');
+    });
+
+    textarea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        textarea.classList.remove('border-indigo-500/80');
+        textarea.classList.remove('bg-[#1a1a1a]');
+        const path = e.dataTransfer.getData('text/plain');
+        if (path) {
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            const text = textarea.value;
+            textarea.value = text.substring(0, start) + path + text.substring(end);
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = start + path.length;
+            textarea.style.height = '';
+            textarea.style.height = textarea.scrollHeight + 'px';
+        }
     });
 }
 

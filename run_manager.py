@@ -193,7 +193,7 @@ def update_session_summary(username: str, session_id: str, run: Dict[str, Any], 
 
 
 def get_session_workspace(username: str, session_id: str) -> Path:
-    path = config.WORKSPACE_DIR / utils.sanitize_username(username) / utils.safe_id(session_id, "session")
+    path = config.OUTPUT_DIR / utils.sanitize_username(username) / utils.safe_id(session_id, "session")
     path.mkdir(parents=True, exist_ok=True)
     return path
 

@@ -932,23 +932,28 @@ async function toggleAction() {
     }
 
     const inputEl = document.getElementById('user-query-input');
-    const query = inputEl.value.trim();
-    if (!query) return;
+    const rawQuery = inputEl.value.trim();
+    if (!rawQuery) return;
 
     inputEl.value = "";
     inputEl.style.height = 'auto';
 
     const userMsgId = 'u_' + Date.now();
-    renderHistoricalMessage({ id: userMsgId, role: 'user', text: query }, true);
+    renderHistoricalMessage({ id: userMsgId, role: 'user', text: rawQuery }, true);
 
     const currentSess = getActiveSession();
     if (currentSess.chats.length === 1 && currentSess.name.startsWith('New Pipeline')) {
-        currentSess.name = query.substring(0, 18) + (query.length > 18 ? '...' : '');
+        currentSess.name = rawQuery.substring(0, 18) + (rawQuery.length > 18 ? '...' : '');
         renderSessionList();
     }
 
+    const query = rawQuery.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, name, p) => {
+        const cleanPath = p.replace(/^['"]|['"]$/g, '');
+        return `"${cleanPath}"`;
+    });
+
     currentAiMsgId = 'ai_' + Date.now();
-    const run = createRunRecord(query, currentAiMsgId);
+    const run = createRunRecord(rawQuery, currentAiMsgId);
     currentRunId = run.id;
 
     const container = document.getElementById('chat-history-container');
@@ -1892,8 +1897,12 @@ function initDragAndDrop() {
         e.preventDefault();
         textarea.classList.remove('border-indigo-500/80');
         textarea.classList.remove('bg-[#1a1a1a]');
-        const path = e.dataTransfer.getData('text/plain');
+        let path = e.dataTransfer.getData('text/plain');
         if (path) {
+            if (path.startsWith('/') || path.includes('/') || path.includes('\\')) {
+                const filename = path.replace(/\\/g, '/').split('/').pop();
+                path = `[${filename}](${path})`;
+            }
             const start = textarea.selectionStart;
             const end = textarea.selectionEnd;
             const text = textarea.value;

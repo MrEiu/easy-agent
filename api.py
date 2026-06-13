@@ -317,9 +317,10 @@ async def workspace_tree_api(request):
     root = request.query_params.get("root", "all").lower()
     username = utils.sanitize_username(request.query_params.get("username") or "guest")
     session_id = request.query_params.get("session_id", "default")
+    run_id = request.query_params.get("run_id")
     max_files = int(request.query_params.get("max_files", "1500"))
 
-    session_workspace = run_manager.get_session_workspace(username, session_id)
+    session_workspace = run_manager.get_session_workspace(username, session_id, run_id)
     roots = {
         "workspace": session_workspace,
         "skill": config.SKILL_DIR,

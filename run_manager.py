@@ -138,7 +138,7 @@ def register_artifact(run: Dict[str, Any], path: Path, title: Optional[str] = No
 
 
 def scan_run_artifacts(run: Dict[str, Any]) -> List[Dict[str, Any]]:
-    session_workspace = get_session_workspace(run["username"], run["session_id"])
+    session_workspace = get_session_workspace(run["username"], run["session_id"], run["id"])
     for p in session_workspace.rglob("*"):
         if p.is_file() and not utils.match_ignore(p, session_workspace):
             register_artifact(run, p)
@@ -192,7 +192,14 @@ def update_session_summary(username: str, session_id: str, run: Dict[str, Any], 
     utils.write_json(summary_path(username, session_id), summary)
 
 
-def get_session_workspace(username: str, session_id: str) -> Path:
+def get_session_workspace(username: str, session_id: str, run_id: Optional[str] = None) -> Path:
+    rid = run_id or state.active_run_id
+    if rid and rid in state.RUNS:
+        run = state.RUNS[rid]
+        if run.get("session_id") == session_id:
+            path = Path(run["output_abs_dir"]) / "workplace"
+            path.mkdir(parents=True, exist_ok=True)
+            return path
     path = config.OUTPUT_DIR / utils.sanitize_username(username) / utils.safe_id(session_id, "session")
     path.mkdir(parents=True, exist_ok=True)
     return path

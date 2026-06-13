@@ -239,18 +239,19 @@ async def create_plan_with_agent(query: str, session_id: str, username: str, run
       "id": "step_1",
       "title": "简短标题",
       "description": "做什么",
-      "skill": "相对 /skill 的可执行文件路径，例如 tool/run.py；如果不确定可留空",
-      "args": "命令行参数字符串。必须尽量使用 /data 和 {run['output_dir']} 或 $OUTPUT_DIR",
+      "skill": "如果有可用且匹配的领域专用技能文件，填写其相对 /skill 的路径（如 scRNA-skills/run.py）；若是日常通用任务（如写文件、执行通用命令行指令），此处必须留空 (\"\")",
+      "args": "命令行参数或命令。如果 skill 为空但需要执行通用命令行指令，则此处填写要执行的 Shell 命令（如 python draw.py）；如果是技能任务，则填写技能所需的命令行参数",
+      "write_file_path": "可选。如果是日常写文件任务，填写待写入的目标文件相对路径（如 script.py）",
+      "write_file_content": "可选。如果是日常写文件任务，填写待写入的完整文件内容",
       "expected_outputs": ["/output/..."]
     }}
   ]
 }}
 
 要求:
-1. 不写死任何领域专用 skill 名称，必须根据可用 skill 列表选择。
-2. 如果 skill 列表为空，steps 里说明需要上传 skill。
-3. args 里不要写危险命令，不要访问 /skill、/data、/output 以外路径。
-4. 所有输出必须进入当前输出目录或其子目录。
+1. 区分领域专用技能与日常任务。日常通用任务（如新建/写入代码文件、执行简单 Python 脚本/Shell 命令行）请勿使用任何 skill（即 skill 设为空字符串 `""`），直接通过配置 args（运行命令）或 write_file_path/write_file_content（写入文件）来描述。
+2. 只有特定或复杂的领域级专业操作（如 scRNA 测序分析等）才匹配并调用具体的专用 skill 脚本。
+3. 所有输出必须进入当前输出目录或其子目录。
 """.strip()
 
     planner = Agent(
@@ -389,6 +390,134 @@ def scan_output_files_impl(sub_dir: str = "") -> str:
 @function_tool
 def scan_output_files(sub_dir: str = "") -> str:
     return scan_output_files_impl(sub_dir)
+
+
+@function_tool
+def write_workspace_file(path: str, content: str, step_id: str = "") -> str:
+    if state.abort_flag:
+        return "操作已中断"
+    rid = state.active_run_id
+    if not rid or rid not in state.RUNS:
+        return "没有 active run。"
+    run = state.RUNS[rid]
+
+    step_id = step_id or "write_file"
+    update_plan_step_status(run, step_id, "running", f"写入文件 {path}")
+    run_manager.event(run, "step", f"write {path}", "running", path, step_id=step_id)
+
+    try:
+        target_path = Path(path)
+        if not target_path.is_absolute():
+            output_dir = run["output_abs_dir"]
+            target_path = (Path(output_dir) / target_path).resolve()
+        
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(content, encoding='utf-8')
+        
+        scan_output_files_impl("")
+        update_plan_step_status(run, step_id, "success", "写入成功")
+        run_manager.event(run, "step", f"write {path}", "success", "写入成功", step_id=step_id, returncode=0)
+        return f"【写入成功】文件已保存至: {utils.rel_public_path(target_path)}"
+    except Exception as e:
+        cls = classify_error(str(e), "", None)
+        run["error_classification"] = cls
+        update_plan_step_status(run, step_id, "failed", str(e))
+        run_manager.event(run, "step", f"write {path}", "error", str(e), step_id=step_id, returncode=1, error_classification=cls)
+        run_manager.write_manifest(run)
+        return f"【写入失败】{e}。\n【重要系统指令】该步骤执行异常。你必须【立刻停止】后续步骤的执行，不可尝试自行修复或调试。请直接向用户报告异常原因并询问进一步指示。"
+
+
+@function_tool
+def execute_workspace_command(cmd: str, timeout_seconds: int = 1200, step_id: str = "") -> str:
+    if state.abort_flag:
+        return "操作已中断"
+    rid = state.active_run_id
+    if not rid or rid not in state.RUNS:
+        return "没有 active run。"
+    run = state.RUNS[rid]
+
+    step_id = step_id or "execute_command"
+    update_plan_step_status(run, step_id, "running", cmd)
+    run_manager.event(run, "step", cmd, "running", cmd, step_id=step_id)
+
+    try:
+        session_workspace = run_manager.get_session_workspace(run["username"], run["session_id"])
+
+        env = os.environ.copy()
+        if config.EMBED_PYTHON_DIR.exists():
+            embed_dir = str(config.EMBED_PYTHON_DIR)
+            scripts_dir = str(config.EMBED_PYTHON_DIR / "Scripts")
+            env["PATH"] = embed_dir + os.pathsep + scripts_dir + os.pathsep + env.get("PATH", "")
+        env.update({
+            "SKILL_DIR": str(config.SKILL_DIR),
+            "DATA_DIR": str(config.DATA_DIR),
+            "GLOBAL_OUTPUT_DIR": str(config.OUTPUT_DIR),
+            "OUTPUT_DIR": str(Path(run["output_abs_dir"])),
+            "WORKSPACE_DIR": str(session_workspace),
+            "RUN_ID": run["id"],
+            "USERNAME": run["username"],
+            "RUN_MANIFEST": str(run_manager.manifest_path(run)),
+            "RUN_EVENTS": str(run_manager.events_path(run)),
+        })
+
+        state.active_subprocess = subprocess.Popen(
+            cmd,
+            shell=True,
+            cwd=str(session_workspace),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        stdout, stderr = state.active_subprocess.communicate(timeout=max(1, int(timeout_seconds)))
+        rc = state.active_subprocess.returncode
+        state.active_subprocess = None
+
+        scan_output_files_impl("")
+
+        if state.abort_flag:
+            raise RuntimeError("操作被用户强制中断")
+
+        if rc == 0:
+            update_plan_step_status(run, step_id, "success", "进程结束")
+            run_manager.event(run, "step", cmd, "success", "进程结束", step_id=step_id, returncode=rc)
+            return f"【执行成功】{cmd}\n\n【STDOUT】\n{stdout[-12000:]}"
+        else:
+            cls = classify_error(stderr, stdout, rc)
+            run["error_classification"] = cls
+            update_plan_step_status(run, step_id, "failed", stderr[-1000:])
+            run_manager.event(run, "step", cmd, "error", stderr[-4000:], step_id=step_id, returncode=rc, error_classification=cls)
+            run_manager.write_manifest(run)
+            return (
+                f"【执行失败】{cmd}\n退出码: {rc}\n\n"
+                f"【错误分类】\n{json.dumps(cls, ensure_ascii=False, indent=2)}\n\n"
+                f"【STDERR】\n{stderr[-12000:]}\n\n"
+                f"【STDOUT】\n{stdout[-8000:]}\n\n"
+                "【重要系统指令】该步骤执行已失败。根据交互规则，你必须【立刻停止】后续步骤的执行。严禁自行编写脚本安装包、修复环境或尝试调试。请直接将此错误整理报告给用户，并询问用户的进一步指示。"
+            )
+    except subprocess.TimeoutExpired:
+        if state.active_subprocess:
+            state.active_subprocess.kill()
+            state.active_subprocess = None
+        cls = classify_error("timeout", "", None)
+        run["error_classification"] = cls
+        update_plan_step_status(run, step_id, "failed", "timeout")
+        run_manager.event(run, "step", cmd, "error", "timeout", step_id=step_id, error_classification=cls)
+        run_manager.write_manifest(run)
+        return f"命令执行超时: {cmd}。\n【重要系统指令】该步骤超时失败。你必须【立刻停止】后续步骤的执行，不可尝试自行修复或调试。请直接向用户报告超时原因并询问进一步指示。"
+    except Exception as e:
+        if state.active_subprocess:
+            try:
+                state.active_subprocess.kill()
+            except Exception:
+                pass
+            state.active_subprocess = None
+        cls = classify_error(str(e), "", None)
+        run["error_classification"] = cls
+        update_plan_step_status(run, step_id, "failed", str(e))
+        run_manager.event(run, "step", cmd, "error", str(e), step_id=step_id, error_classification=cls)
+        run_manager.write_manifest(run)
+        return f"系统异常或中断: {e}。\n【重要系统指令】该步骤执行异常。你必须【立刻停止】后续步骤的执行，不可尝试自行修复或调试。请直接向用户报告异常原因并询问进一步指示。"
 
 
 @function_tool

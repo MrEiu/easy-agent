@@ -1,0 +1,2632 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>scRNA-seq Copilot Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+        :root {
+            --bg-base: #000000;
+            --bg-sidebar: #050505;
+            --bg-panel: #0A0A0A;
+            --bg-editor: #060606;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent: #6366f1;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-base);
+            color: #EDEDED;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+        .panel-divider { border-color: var(--border-color); }
+
+        .prose h1 { font-size: 1.25rem; line-height: 1.75rem; font-weight: 600; color: #fff; margin-top: 1.5rem; margin-bottom: .75rem; letter-spacing: -0.01em; }
+        .prose h2 { font-size: 1rem; line-height: 1.5rem; font-weight: 500; color: #fff; margin-top: 1.25rem; margin-bottom: .5rem; border-bottom: 1px solid rgba(255,255,255,.1); padding-bottom: .25rem; }
+        .prose h3 { font-size: 14px; font-weight: 500; color: #e5e7eb; margin-top: 1rem; margin-bottom: .5rem; }
+        .prose p { color: #d1d5db; line-height: 1.625; margin-bottom: .75rem; font-size: 13px; }
+        .prose ul, .prose ol { list-style-position: inside; color: #d1d5db; margin-bottom: .75rem; padding-left: .25rem; font-size: 13px; line-height: 1.625; }
+        .prose ul { list-style-type: disc; }
+        .prose ol { list-style-type: decimal; }
+        .prose li { margin-top: .25rem; margin-bottom: .25rem; }
+        .prose li::marker { color: #6366f1; }
+        .prose table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 11px; border-radius: .5rem; overflow: hidden; border: 1px solid rgba(255,255,255,.1); }
+        .prose th { background: #151515; text-align: left; padding: .625rem; font-weight: 500; color: #e5e7eb; border-bottom: 1px solid rgba(255,255,255,.1); }
+        .prose td { padding: .625rem; border-bottom: 1px solid rgba(255,255,255,.05); color: #9ca3af; }
+        .prose tr:hover td { background: rgba(255,255,255,.02); }
+        .prose code { background: #151515; border: 1px solid rgba(255,255,255,.1); padding: .125rem .375rem; border-radius: .25rem; color: #a5b4fc; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+        .prose pre { background: #0D0D0D; padding: .875rem; border-radius: .75rem; overflow-x: auto; border: 1px solid rgba(255,255,255,.1); color: #d1d5db; font-size: 11px; line-height: 1.625; margin: .75rem 0; box-shadow: 0 10px 15px -3px rgba(0,0,0,.4); }
+        .prose pre code { background: transparent; border: none; padding: 0; color: inherit; }
+        .prose blockquote { border-left: 2px solid #6366f1; padding: .25rem 0 .25rem .75rem; color: #6b7280; font-style: italic; margin: .75rem 0; background: rgba(99,102,241,.02); border-radius: 0 .5rem .5rem 0; }
+        .prose img { border-radius: .5rem; border: 1px solid rgba(255,255,255,.1); margin: 1rem auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,.4); max-width: 100%; height: auto; object-fit: cover; transition: border-color .2s; cursor: zoom-in; background: #000; }
+        .prose img:hover { border-color: rgba(99,102,241,.5); }
+
+        .session-item.active { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.2); }
+
+        details.trace-box summary::-webkit-details-marker { display: none; }
+        details.trace-box summary { list-style: none; }
+        details.trace-box[open] summary .arrow-icon { transform: rotate(90deg); }
+
+        #left-sidebar {
+            width: 14rem;
+            transition: width 180ms ease;
+            background-color: var(--bg-sidebar);
+        }
+        body.sidebar-collapsed #left-sidebar { width: 3.75rem; }
+        body.sidebar-collapsed .sidebar-label,
+        body.sidebar-collapsed .session-title-text,
+        body.sidebar-collapsed .session-meta-text,
+        body.sidebar-collapsed .sidebar-search,
+        body.sidebar-collapsed .settings-label,
+        body.sidebar-collapsed .new-pipeline-label { display: none; }
+        body.sidebar-collapsed .session-item { justify-content: center; padding-left: 0.5rem; padding-right: 0.5rem; }
+        body.sidebar-collapsed #session-list { padding-left: 0.35rem; padding-right: 0.35rem; }
+
+        .run-card {
+            border-radius: .75rem;
+            border: 1px solid rgba(255,255,255,.1);
+            background: #0D0D0D;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,.35);
+        }
+        .run-card.running { border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.035); }
+        .run-card.success { border-color: rgba(16,185,129,.25); background: rgba(16,185,129,.025); }
+        .run-card.failed { border-color: rgba(239,68,68,.3); background: rgba(239,68,68,.035); }
+        .run-card.interrupted { border-color: rgba(249,115,22,.3); background: rgba(249,115,22,.035); }
+
+        .step-node { position: relative; display: flex; align-items: center; gap: .5rem; font-size: 11px; color: #6b7280; min-width: 0; flex-shrink: 0; }
+        .step-dot { width: 1.25rem; height: 1.25rem; border-radius: 9999px; border: 1px solid rgba(255,255,255,.1); background: #151515; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 10px; }
+        .step-node.done .step-dot { background: rgba(16,185,129,.15); border-color: rgba(16,185,129,.35); color: #6ee7b7; }
+        .step-node.running .step-dot { background: rgba(245,158,11,.15); border-color: rgba(245,158,11,.35); color: #fcd34d; }
+        .step-node.failed .step-dot { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.4); color: #fca5a5; }
+        .step-node.done .step-label { color: #6ee7b7; }
+        .step-node.running .step-label { color: #fcd34d; }
+        .step-node.failed .step-label { color: #fca5a5; }
+
+        .workspace-tab.active { background: #111; color: #a5b4fc; border-color: rgba(99,102,241,.5); }
+        .editor-tab.active { background: #111; color: #f3f4f6; border-top-color: #6366f1; }
+        .file-row.active { background: rgba(99,102,241,.15); color: #c7d2fe; }
+        .file-row:hover { background: rgba(255,255,255,.05); }
+
+        .dev-hidden { display: none; }
+        body.dev-mode .dev-hidden { display: inline-flex; }
+
+
+        :root {
+            --sidebar-w: 14rem;
+            --chat-w: 470px;
+        }
+
+        #app-main {
+            --handle-w: 5px;
+        }
+
+        #left-sidebar {
+            width: var(--sidebar-w);
+            min-width: 3.75rem;
+            max-width: 34rem;
+        }
+
+        #chat-panel {
+            width: var(--chat-w);
+            min-width: 320px;
+            max-width: 70vw;
+        }
+
+        #workspace-panel {
+            min-width: 360px;
+        }
+
+        .resize-handle {
+            width: var(--handle-w);
+            cursor: col-resize;
+            background: transparent;
+            position: relative;
+            flex-shrink: 0;
+            z-index: 30;
+        }
+
+        .resize-handle::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 2px;
+            width: 1px;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .resize-handle:hover::after,
+        .resize-handle.active::after {
+            left: 1px;
+            width: 3px;
+            background: rgba(99, 102, 241, 0.75);
+            box-shadow: 0 0 16px rgba(99, 102, 241, 0.35);
+        }
+
+        body.is-resizing {
+            cursor: col-resize;
+            user-select: none;
+        }
+
+        body.sidebar-collapsed #left-sidebar {
+            width: 3.75rem !important;
+            min-width: 3.75rem !important;
+            max-width: 3.75rem !important;
+        }
+
+        body.sidebar-collapsed #sidebar-resizer {
+            display: none;
+        }
+
+        body.workspace-fullscreen header,
+        body.workspace-fullscreen #left-sidebar,
+        body.workspace-fullscreen #sidebar-resizer,
+        body.workspace-fullscreen #chat-panel,
+        body.workspace-fullscreen #chat-resizer {
+            display: none !important;
+        }
+
+        body.workspace-fullscreen #app-main {
+            position: fixed;
+            inset: 0;
+            z-index: 120;
+            height: 100vh;
+        }
+
+        body.workspace-fullscreen #workspace-panel {
+            position: fixed;
+            inset: 0;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 130;
+            background: #000;
+        }
+
+        body.workspace-fullscreen #workspace-fullscreen-icon-enter {
+            display: none;
+        }
+
+        body:not(.workspace-fullscreen) #workspace-fullscreen-icon-exit {
+            display: none;
+        }
+
+        .locked-setting { opacity: 0.45; pointer-events: none; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden selection:bg-indigo-500/30">
+
+<header class="h-12 border-b panel-divider bg-[#050505] flex items-center justify-between px-4 shrink-0 z-50">
+    <div class="flex items-center space-x-4">
+        <button onclick="toggleSidebarCollapse()" class="w-8 h-8 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] flex items-center justify-center text-gray-400 hover:text-white transition-colors" title="折叠左侧栏">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="flex items-center space-x-2 text-gray-200">
+            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+            <span class="font-medium text-[13px] tracking-wide">scRNA-seq Copilot</span>
+        </div>
+        <div class="h-4 w-px bg-white/10"></div>
+        <span class="text-[11px] text-gray-500 mono flex items-center space-x-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" id="status-dot"></span>
+            <span id="status-text">Connecting...</span>
+        </span>
+    </div>
+
+    <div class="flex items-center space-x-3">
+        <button onclick="openApiTraceModal()" class="dev-hidden group items-center space-x-1.5 text-[11px] text-gray-400 hover:text-indigo-400 transition-colors px-2 py-1 rounded hover:bg-white/5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+            <span class="mono">Dev Trace</span>
+        </button>
+        <span id="auth-chip" class="text-[10px] mono px-2 py-1 rounded border border-white/10 bg-white/[0.03] text-gray-500">GUEST</span>
+    </div>
+</header>
+
+<main id="app-main" class="flex-1 flex overflow-hidden bg-black relative">
+
+    <!-- 左栏: 会话管理 -->
+    <aside id="left-sidebar" class="border-r panel-divider flex flex-col shrink-0">
+        <div class="p-3 border-b panel-divider space-y-2">
+            <button onclick="createSession()" class="w-full flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[12px] font-medium py-2 rounded-lg transition-colors">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                <span class="new-pipeline-label">New Pipeline</span>
+            </button>
+            <input id="session-search" oninput="renderSessionList()" class="sidebar-search w-full bg-[#111] border border-white/10 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-500/40" placeholder="Search sessions..." />
+        </div>
+        <div class="flex-1 overflow-y-auto p-2 space-y-1" id="session-list"></div>
+
+        <div class="border-t panel-divider p-2">
+            <button onclick="openSettingsModal()" class="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] px-2 py-2 text-[12px] text-gray-400 hover:text-white transition-colors">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.827 2.37 2.37a1.724 1.724 0 001.065 2.572c1.757.427 1.757 2.925 0 3.351a1.724 1.724 0 00-1.066 2.573c.94 1.543-.827 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.427 1.757-2.925 1.757-3.351 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.827-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.757-.427-1.757-2.925 0-3.351a1.724 1.724 0 001.066-2.573c-.94-1.543.827-3.31 2.37-2.37.996.607 2.29.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span class="settings-label">Settings</span>
+            </button>
+        </div>
+    </aside>
+
+    <div id="sidebar-resizer" class="resize-handle" data-resize="sidebar" title="拖动调整左栏宽度"></div>
+
+    <!-- 中栏: Chat 对话交互区 -->
+    <section id="chat-panel" class="border-r panel-divider bg-[#0A0A0A] flex flex-col relative shrink-0">
+        <div class="h-10 border-b panel-divider flex items-center px-4 justify-between shrink-0 bg-[#050505]">
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider truncate" id="current-session-title">Chat</span>
+                <span id="session-run-count" class="text-[10px] mono text-gray-600"></span>
+            </div>
+            <button onclick="clearCurrentSession()" class="text-[11px] text-gray-500 hover:text-red-400 flex items-center space-x-1 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                <span>Clear Memory</span>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-5 pb-32 space-y-6" id="chat-history-container"></div>
+
+        <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#0A0A0A] via-[#0A0A0A]/95 to-transparent z-30">
+            <div class="relative flex items-end shadow-xl shadow-black/50">
+                <textarea id="user-query-input" rows="1" placeholder="Describe the pipeline steps..." class="w-full bg-[#111] border border-white/10 rounded-xl pl-4 pr-10 py-3 text-[13px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500/50 focus:bg-[#161616] transition-all resize-none max-h-32 leading-relaxed" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"></textarea>
+                <button id="run-btn" onclick="toggleAction()" class="absolute right-2 bottom-2 p-1.5 rounded-lg text-gray-500 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all">
+                    <svg id="icon-send" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                    <svg id="icon-stop" class="w-4 h-4 hidden text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <div id="chat-resizer" class="resize-handle" data-resize="chat" title="拖动调整 Chat / Workspace 比例"></div>
+
+    <!-- 右侧: VS Code 风格 Artifacts Workspace -->
+    <section id="workspace-panel" class="flex-1 bg-[#000000] flex flex-col relative min-w-0">
+        <div class="h-10 border-b panel-divider bg-[#050505] flex items-center justify-between px-2 shrink-0">
+            <div class="flex items-center h-full">
+                <button onclick="setWorkspaceView('explorer')" id="tab-explorer" class="workspace-tab active h-full flex items-center px-4 border-r border-transparent text-[12px] text-gray-300 gap-2">
+                    <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+                    Explorer
+                </button>
+                <button onclick="setWorkspaceView('report')" id="tab-report" class="workspace-tab h-full flex items-center px-4 border-r border-transparent text-[12px] text-gray-400 hover:text-gray-200">Report</button>
+                <button onclick="setWorkspaceView('run')" id="tab-run" class="workspace-tab h-full flex items-center px-4 border-r border-transparent text-[12px] text-gray-400 hover:text-gray-200">Run</button>
+                <button onclick="setWorkspaceView('gallery')" id="tab-gallery" class="workspace-tab h-full flex items-center px-4 border-r border-transparent text-[12px] text-gray-400 hover:text-gray-200">Gallery</button>
+                <button onclick="setWorkspaceView('tables')" id="tab-tables" class="workspace-tab h-full flex items-center px-4 border-r border-transparent text-[12px] text-gray-400 hover:text-gray-200">Tables</button>
+                <button onclick="setWorkspaceView('logs')" id="tab-logs" class="workspace-tab h-full flex items-center px-4 border-r border-transparent text-[12px] text-gray-400 hover:text-gray-200">Logs</button>
+            </div>
+            <div class="flex items-center gap-2 pr-2">
+                <select id="workspace-root" onchange="refreshWorkspace()" class="bg-[#0D0D0D] border border-white/10 rounded-md px-2 py-1 text-[11px] text-gray-400 focus:outline-none focus:border-indigo-500/40">
+                    <option value="all">all</option>
+                    <option value="workspace">workspace</option>
+                    <option value="output">output</option>
+                    <option value="data">data</option>
+                    <option value="skill">skill</option>
+                </select>
+                <button onclick="triggerDataUpload()" class="text-[11px] text-gray-500 hover:text-emerald-300 px-2 py-1 rounded hover:bg-white/5">Upload Data</button>
+                <button onclick="triggerSkillUpload()" class="text-[11px] text-gray-500 hover:text-amber-300 px-2 py-1 rounded hover:bg-white/5">Add Skill</button>
+                <input id="data-upload-input" type="file" multiple class="hidden" onchange="uploadFiles('data', this.files)" />
+                <input id="skill-upload-input" type="file" multiple accept=".zip,.py,.R,.r,.sh,.json,.yaml,.yml,.md,.txt" class="hidden" onchange="uploadFiles('skill', this.files)" />
+                <button id="workspace-fullscreen-btn" onclick="toggleWorkspaceFullscreen()" class="text-[11px] text-gray-500 hover:text-indigo-300 px-2 py-1 rounded hover:bg-white/5 flex items-center gap-1" title="Workspace 全屏">
+                    <svg id="workspace-fullscreen-icon-enter" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+                    <svg id="workspace-fullscreen-icon-exit" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+                    <span id="workspace-fullscreen-label">Fullscreen</span>
+                </button>
+                <button onclick="refreshWorkspace()" class="text-[11px] text-gray-500 hover:text-indigo-300 px-2 py-1 rounded hover:bg-white/5">Refresh</button>
+                <span id="workspace-status" class="mono text-[10px] text-gray-600"></span>
+            </div>
+        </div>
+
+        <div class="flex-1 min-h-0 flex bg-[#000]">
+            <aside id="workspace-explorer" class="w-64 shrink-0 border-r panel-divider bg-[#050505] flex flex-col">
+                <div class="h-9 border-b panel-divider flex items-center justify-between px-3">
+                    <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Artifacts Explorer</span>
+                    <button onclick="refreshWorkspace()" class="text-gray-600 hover:text-gray-300">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M4 4v5h.582M20 20v-5h-.581M5.5 9A7.5 7.5 0 0118.2 6.2M18.5 15A7.5 7.5 0 015.8 17.8"/></svg>
+                    </button>
+                </div>
+                <div class="p-2 border-b panel-divider">
+                    <input id="file-filter" oninput="renderFileTree()" class="w-full bg-[#0D0D0D] border border-white/10 rounded-md px-2 py-1.5 text-[11px] text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-500/40" placeholder="Filter files..." />
+                </div>
+                <div id="file-tree" class="flex-1 overflow-auto p-1 text-[12px]"></div>
+            </aside>
+
+            <div class="flex-1 min-w-0 flex flex-col bg-[#000]">
+                <div id="editor-tabs" class="h-9 shrink-0 border-b panel-divider bg-[#050505] flex items-center overflow-x-auto"></div>
+                <div id="workspace-content" class="flex-1 overflow-auto bg-[#000]"></div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<!-- Lightbox -->
+<div id="lightbox-modal" class="hidden fixed inset-0 bg-black/90 backdrop-blur-xl z-[200] flex items-center justify-center p-4 transition-opacity">
+    <button onclick="closeLightbox()" class="absolute top-6 right-6 text-gray-400 hover:text-white bg-white/5 p-2 rounded-xl border border-white/10 hover:bg-white/10 transition-all z-50">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+    <div class="w-full max-w-7xl h-full max-h-[90vh] flex flex-col items-center justify-center">
+        <img id="lightbox-img" src="" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl border border-white/10" />
+        <p id="lightbox-caption" class="mt-4 text-gray-300 text-sm font-medium tracking-wide"></p>
+    </div>
+</div>
+
+<!-- Dev Trace Modal -->
+<div id="api-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 lg:p-10 transition-opacity">
+    <div class="bg-[#0D0D0F] border panel-divider rounded-xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl overflow-hidden ring-1 ring-white/5">
+        <div class="px-4 py-3 border-b panel-divider flex justify-between items-center bg-[#050505] shrink-0">
+            <div class="flex items-center space-x-3">
+                <span class="text-xs font-semibold text-gray-300 mono tracking-wider">NETWORK_INSPECTOR</span>
+                <span class="text-[10px] text-gray-600">Developer Mode</span>
+            </div>
+            <button onclick="document.getElementById('api-modal').classList.add('hidden')" class="text-gray-500 hover:text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 lg:p-6 bg-black" id="api-trace-container"></div>
+    </div>
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+    <div class="w-full max-w-xl rounded-2xl border border-white/10 bg-[#0D0D0F] shadow-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b panel-divider flex items-center justify-between bg-[#050505]">
+            <div>
+                <div class="text-sm font-semibold text-gray-200">Settings</div>
+                <div class="text-[11px] text-gray-600 mt-1">需要登录后才能修改设置</div>
+            </div>
+            <button onclick="closeSettingsModal()" class="text-gray-500 hover:text-white">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+
+        <div class="p-5 space-y-5">
+            <div id="login-panel" class="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <div class="text-[13px] text-gray-200 font-medium" id="login-title">Guest Mode</div>
+                        <div class="text-[11px] text-gray-500 mt-1" id="login-desc">未登录时只能查看设置，不能修改。</div>
+                    </div>
+                    <button onclick="logoutSettings()" id="logout-btn" class="hidden text-[11px] text-gray-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-500/10">Logout</button>
+                </div>
+                <div id="login-form" class="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
+                    <input id="login-account-input" class="bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500/40" placeholder="账号 / username" />
+                    <input id="login-password-input" type="password" class="bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-500/40" placeholder="密码" />
+                    <button onclick="loginSettings()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[12px] px-4 rounded-lg">Login</button>
+                </div>
+            </div>
+
+            <div id="settings-fields" class="space-y-4">
+                <label class="block">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wider">API Base</span>
+                    <input id="setting-api-base" class="mt-1 w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-gray-200 focus:outline-none focus:border-indigo-500/40" />
+                </label>
+
+                <label class="block">
+                    <span class="text-[11px] text-gray-500 uppercase tracking-wider">Model</span>
+                    <input id="setting-model" class="mt-1 w-full bg-[#111] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-gray-200 focus:outline-none focus:border-indigo-500/40" placeholder="deepseek-chat" />
+                </label>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <label class="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                        <span class="text-[12px] text-gray-300">Developer Mode</span>
+                        <input id="setting-dev-mode" type="checkbox" class="accent-indigo-500" />
+                    </label>
+                    <label class="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                        <span class="text-[12px] text-gray-300">Auto Refresh Workspace</span>
+                        <input id="setting-auto-refresh" type="checkbox" class="accent-indigo-500" />
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="closeSettingsModal()" class="text-[12px] text-gray-400 hover:text-white px-4 py-2 rounded-lg hover:bg-white/5">Cancel</button>
+                <button onclick="saveSettings()" id="save-settings-btn" class="bg-indigo-600 hover:bg-indigo-500 text-white text-[12px] px-4 py-2 rounded-lg">Save Settings</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_BASE = window.location.protocol === 'file:' ? "http://127.0.0.1:8000" : window.location.origin;
+const EXPLORER_BASE = window.location.protocol === 'file:' ? "http://127.0.0.1:6475" : `${window.location.protocol}//${window.location.hostname}:6475`;
+
+const PIPELINE_STEPS = [
+    { key: 'read_data', label: '读取数据', keywords: ['读取', 'read', 'load', 'directory', 'create_seurat', 'cellbender'] },
+    { key: 'qc', label: 'QC', keywords: ['qc', 'filter', '过滤', 'doublet', 'empty', 'sctransform'] },
+    { key: 'cluster', label: '聚类', keywords: ['cluster', '聚类', 'umap', 'pca', 'find_clusters'] },
+    { key: 'marker', label: 'marker', keywords: ['marker', 'markers', 'find_markers', '差异', '基因'] },
+    { key: 'annotation', label: '注释', keywords: ['annotation', 'cell_type', '细胞类型', '注释', 'review'] },
+    { key: 'report', label: '报告', keywords: ['report', '报告', 'scan_output', 'save_analysis_report', '展示'] }
+];
+
+const DEFAULT_IGNORE_RULES = [
+    '.DS_Store',
+    '__pycache__',
+    '.ipynb_checkpoints',
+    '.git',
+    '.venv',
+    'node_modules',
+    '*.tmp',
+    '*.bak',
+    '~$*'
+];
+
+let ignoreRules = [...DEFAULT_IGNORE_RULES];
+let sessions = loadSessions();
+let activeSessionId = localStorage.getItem('scrna_copilot_active_id') || sessions[0].id;
+if (!sessions.find(s => s.id === activeSessionId)) activeSessionId = sessions[0].id;
+
+let isRunning = false;
+let timerInterval = null;
+let pollInterval = null;
+let startTime = 0;
+let renderedLogCount = 0;
+let renderedTraceCount = 0;
+let currentAiMsgId = null;
+let currentRunId = null;
+let latestApiTraces = [];
+let workspaceView = 'explorer';
+let openedFiles = [];
+let activeFilePath = null;
+let collapsedFolders = new Set(JSON.parse(localStorage.getItem('scrna_collapsed_folders_v1') || '[]'));
+
+let settings = loadSettings();
+let currentUser = loadCurrentUser();
+let isLoggedIn = !!currentUser.token;
+
+const renderer = new marked.Renderer();
+renderer.image = function(href_or_token, title, text) {
+    let href = typeof href_or_token === 'object' ? href_or_token.href : href_or_token;
+    let imgText = typeof href_or_token === 'object' ? href_or_token.text : text;
+    let finalHref = normalizeAssetUrl(href || "");
+    const safeText = escapeHtml(imgText || '');
+    const safeHref = escapeHtml(finalHref);
+    return `
+    <div class="group relative my-5 rounded-lg border border-white/10 bg-[#0A0A0A] overflow-hidden shadow-xl transition-all hover:border-indigo-500/50">
+        <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <button onclick="openLightbox('${escapeAttr(safeHref)}', '${escapeAttr(safeText)}')" class="bg-black/60 backdrop-blur-md text-gray-300 hover:text-white p-1.5 rounded-md border border-white/10 shadow-lg hover:bg-indigo-500/80">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"/></svg>
+            </button>
+        </div>
+        <img src="${safeHref}" alt="${safeText}" class="w-full h-auto object-cover cursor-zoom-in m-0 rounded-none border-none" onclick="openLightbox('${escapeAttr(safeHref)}', '${escapeAttr(safeText)}')" />
+        ${safeText ? `<div class="p-2 border-t border-white/5 bg-[#050505] text-center text-[11px] text-gray-400 flex items-center justify-center space-x-1.5"><svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg><span>${safeText}</span></div>` : ''}
+    </div>`;
+};
+marked.use({ renderer });
+
+window.addEventListener('load', async () => {
+    initResizableLayout();
+    applySettingsToUI();
+    await loadIgnoreRules();
+    switchSession(activeSessionId);
+    fetch(`${API_BASE}/api/logs`).then(() => updateStatus(true)).catch(() => updateStatus(false));
+    renderSettingsState();
+});
+
+function loadSessions() {
+    const raw = localStorage.getItem('scrna_copilot_sessions_v3') || localStorage.getItem('scrna_copilot_sessions_v2');
+    let loaded = null;
+    try { loaded = raw ? JSON.parse(raw) : null; } catch {}
+    if (!Array.isArray(loaded) || loaded.length === 0) {
+        loaded = [{ id: 's_' + Date.now(), name: 'Sample Analysis 1', chats: [], runs: [], createdAt: Date.now(), updatedAt: Date.now() }];
+    }
+    loaded.forEach(s => {
+        if (!s.id) s.id = 's_' + Date.now();
+        if (!Array.isArray(s.chats)) s.chats = [];
+        if (!Array.isArray(s.runs)) s.runs = [];
+        if (!s.createdAt) s.createdAt = Date.now();
+        if (!s.updatedAt) s.updatedAt = s.createdAt;
+    });
+    return loaded;
+}
+
+function loadSettings() {
+    try {
+        return {
+            apiBase: API_BASE,
+            model: 'deepseek-chat',
+            devMode: false,
+            autoRefreshWorkspace: true,
+            ...(JSON.parse(localStorage.getItem('scrna_copilot_settings_v1') || '{}'))
+        };
+    } catch {
+        return { apiBase: API_BASE, model: 'deepseek-chat', devMode: false, autoRefreshWorkspace: true };
+    }
+}
+
+function loadCurrentUser() {
+    try {
+        return JSON.parse(localStorage.getItem('scrna_copilot_current_user') || '{}') || {};
+    } catch {
+        return {};
+    }
+}
+
+function getRuntimeUsername() {
+    return currentUser.username || 'guest';
+}
+
+function getRuntimeAuthToken() {
+    return currentUser.token || '';
+}
+
+
+function saveSessions() {
+    localStorage.setItem('scrna_copilot_sessions_v3', JSON.stringify(sessions));
+    localStorage.setItem('scrna_copilot_active_id', activeSessionId);
+}
+
+function getActiveSession() {
+    return sessions.find(x => x.id === activeSessionId) || sessions[0];
+}
+
+function safeMarkdown(markdown) {
+    const raw = marked.parse(markdown || '');
+    return window.DOMPurify ? DOMPurify.sanitize(raw, { ADD_ATTR: ['target'] }) : raw;
+}
+
+function escapeHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, m => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[m]));
+}
+
+function escapeAttr(str) {
+    return String(str ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
+}
+
+function normalizeAssetUrl(href) {
+    if (!href) return '';
+    if (href.startsWith('http') || href.startsWith('data:')) return href;
+    if (href.startsWith('/')) return EXPLORER_BASE + href;
+    return EXPLORER_BASE + '/' + href.replace(/^\.?\//, '');
+}
+
+function pathToUrl(path) {
+    if (!path) return '';
+    if (path.startsWith('http') || path.startsWith('data:')) return path;
+    let p = path.replace(/\\/g, '/');
+    if (p.startsWith('/output/')) return EXPLORER_BASE + p;
+    if (p.startsWith('output/')) return EXPLORER_BASE + '/' + p;
+    if (p.startsWith('/data/')) return EXPLORER_BASE + p;
+    if (p.startsWith('data/')) return EXPLORER_BASE + '/' + p;
+    if (p.startsWith('/skill/')) return EXPLORER_BASE + p;
+    if (p.startsWith('skill/')) return EXPLORER_BASE + '/' + p;
+    if (p.startsWith('/plots/')) return EXPLORER_BASE + p;
+    if (p.startsWith('plots/')) return EXPLORER_BASE + '/' + p;
+    if (p.startsWith('/')) return EXPLORER_BASE + p;
+    return EXPLORER_BASE + '/output/' + p;
+}
+
+function shortPath(path) {
+    return String(path || '').replace(/^https?:\/\/[^/]+/, '').replace(/^\/+/, '').replace(/^output\//, 'output/').replace(/^data\//, 'data/').replace(/^skill\//, 'skill/').replace(/^plots\//, 'plots/');
+}
+
+function formatDuration(ms) {
+    if (!ms || ms < 0) return '0.0s';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${m}m ${s}s`;
+}
+
+function formatRelative(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return Math.floor(diff / 60000) + ' min ago';
+    if (diff < 86400000) return Math.floor(diff / 3600000) + ' h ago';
+    return new Date(ts).toLocaleDateString();
+}
+
+function updateStatus(ok) {
+    document.getElementById('status-dot').className = `w-1.5 h-1.5 rounded-full ${ok ? 'bg-emerald-500' : 'bg-red-500'}`;
+    document.getElementById('status-text').innerText = ok ? "Connected" : "Disconnected";
+}
+
+function toggleSidebarCollapse() {
+    document.body.classList.toggle('sidebar-collapsed');
+    localStorage.setItem('scrna_copilot_sidebar_collapsed', document.body.classList.contains('sidebar-collapsed') ? 'true' : 'false');
+}
+
+function renderSessionList() {
+    const list = document.getElementById('session-list');
+    const q = (document.getElementById('session-search')?.value || '').toLowerCase().trim();
+    list.innerHTML = "";
+    sessions
+        .filter(s => !q || s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q))
+        .forEach((s) => {
+            const latestRun = [...(s.runs || [])].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))[0];
+            const status = latestRun?.status || 'idle';
+            const statusClass = {
+                running: 'bg-amber-400',
+                success: 'bg-emerald-400',
+                failed: 'bg-red-400',
+                interrupted: 'bg-orange-400',
+                idle: 'bg-gray-600'
+            }[status] || 'bg-gray-600';
+
+            const btn = document.createElement('button');
+            btn.className = `session-item w-full flex items-center gap-2 p-2.5 rounded-lg text-left text-[12px] text-gray-300 hover:bg-white/5 transition-all border border-transparent ${s.id === activeSessionId ? 'active text-indigo-300' : ''}`;
+            btn.onclick = () => switchSession(s.id);
+            btn.innerHTML = `
+                <span class="relative shrink-0">
+                    <svg class="w-3.5 h-3.5 ${s.id === activeSessionId ? 'text-indigo-500' : 'text-gray-500'}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                    <span class="absolute -right-1 -bottom-1 w-1.5 h-1.5 rounded-full ${statusClass}"></span>
+                </span>
+                <span class="min-w-0 flex-1">
+                    <span class="session-title-text block truncate">${escapeHtml(s.name)}</span>
+                    <span class="session-meta-text block text-[10px] text-gray-600 truncate">${latestRun ? `${status} · ${formatRelative(latestRun.startedAt)}` : 'No runs yet'}</span>
+                </span>`;
+            list.appendChild(btn);
+        });
+}
+
+function createSession() {
+    const newId = 's_' + Date.now();
+    sessions.unshift({ id: newId, name: `New Pipeline ${sessions.length + 1}`, chats: [], runs: [], createdAt: Date.now(), updatedAt: Date.now() });
+    activeSessionId = newId;
+    saveSessions();
+    switchSession(newId);
+}
+
+function switchSession(id) {
+    activeSessionId = id;
+    saveSessions();
+    renderSessionList();
+
+    const s = getActiveSession();
+    document.getElementById('current-session-title').innerText = s.name;
+    document.getElementById('session-run-count').innerText = `${s.runs.length || 0} runs`;
+    const chatBox = document.getElementById('chat-history-container');
+    chatBox.innerHTML = `
+        <div class="flex space-x-3 group w-full">
+            <div class="w-6 h-6 rounded-md bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0 mt-0.5"><svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div>
+            <div class="space-y-1 min-w-0">
+                <span class="text-[11px] font-semibold text-gray-300">System</span>
+                <div class="text-[13px] text-gray-400 leading-relaxed">Session loaded. Workspace is scoped to current session.</div>
+            </div>
+        </div>`;
+
+    s.chats.forEach(c => renderHistoricalMessage(c, false));
+    const lastAgentMsg = [...s.chats].reverse().find(c => c.role === 'agent');
+    if (lastAgentMsg) {
+        previewReport(lastAgentMsg.id);
+    } else {
+        renderWorkspaceEmpty();
+    }
+    refreshWorkspace();
+}
+
+async function clearCurrentSession() {
+    if (isRunning) return;
+    await fetch(`${API_BASE}/api/clear`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: activeSessionId, username: getRuntimeUsername(), auth_token: getRuntimeAuthToken() }) }).catch(() => {});
+    const s = getActiveSession();
+    s.chats = [];
+    s.runs = [];
+    s.updatedAt = Date.now();
+    saveSessions();
+    switchSession(activeSessionId);
+}
+
+function setUIState(running) {
+    isRunning = running;
+    document.getElementById('icon-send').classList.toggle('hidden', running);
+    document.getElementById('icon-stop').classList.toggle('hidden', !running);
+    document.getElementById('user-query-input').disabled = running;
+    if (!running) {
+        clearInterval(timerInterval);
+        clearInterval(pollInterval);
+        if (currentAiMsgId) {
+            const traceDetail = document.getElementById(`trace-details-${currentAiMsgId}`);
+            if (traceDetail) traceDetail.removeAttribute('open');
+        }
+    }
+}
+
+function createRunRecord(query, aiMsgId) {
+    const runId = 'run_' + Date.now();
+    const run = {
+        id: runId,
+        aiMsgId,
+        query,
+        status: 'running',
+        startedAt: Date.now(),
+        endedAt: null,
+        durationMs: 0,
+        failedStep: null,
+        steps: PIPELINE_STEPS.map((s, i) => ({ ...s, status: i === 0 ? 'running' : 'pending' })),
+        logs: [],
+        artifacts: [],
+        output: ''
+    };
+    const s = getActiveSession();
+    if (!Array.isArray(s.runs)) s.runs = [];
+    s.runs.unshift(run);
+    s.updatedAt = Date.now();
+    saveSessions();
+    renderSessionList();
+    document.getElementById('session-run-count').innerText = `${s.runs.length || 0} runs`;
+    return run;
+}
+
+function getRun(runId) {
+    const s = getActiveSession();
+    return (s.runs || []).find(r => r.id === runId);
+}
+
+function inferStepKeyFromLog(log) {
+    const text = `${log.step || ''} ${log.message || ''}`.toLowerCase();
+    for (const step of PIPELINE_STEPS) {
+        if (step.keywords.some(k => text.includes(k.toLowerCase()))) return step.key;
+    }
+    return null;
+}
+
+function updateRunFromLogs(runId, logs) {
+    const run = getRun(runId);
+    if (!run) return;
+    run.logs = logs.map(l => ({ ...l }));
+    let highestTouchedIndex = -1;
+
+    logs.forEach(log => {
+        let idx = -1;
+        if (log.step_id) {
+            idx = run.steps.findIndex(s => s.key === log.step_id);
+        }
+        if (idx < 0) {
+            const key = inferStepKeyFromLog(log);
+            if (key) {
+                idx = run.steps.findIndex(s => s.key === key);
+            }
+        }
+        if (idx < 0) return;
+        highestTouchedIndex = Math.max(highestTouchedIndex, idx);
+        if (log.status === 'error' || log.status === 'failed') {
+            run.steps[idx].status = 'failed';
+            run.failedStep = run.steps[idx].label;
+            run.status = 'failed';
+        } else if (log.status === 'success' || log.status === 'done') {
+            run.steps[idx].status = 'done';
+        } else if (run.steps[idx].status !== 'done') {
+            run.steps[idx].status = 'running';
+        }
+    });
+
+    if (run.status !== 'failed' && highestTouchedIndex >= 0) {
+        run.steps.forEach((s, i) => {
+            if (i < highestTouchedIndex && s.status !== 'failed') s.status = 'done';
+            if (i === highestTouchedIndex && s.status === 'pending') s.status = 'running';
+        });
+    }
+
+    renderRunCard(runId);
+    if (workspaceView === 'logs') renderWorkspaceLogs();
+    saveSessions();
+}
+
+function completeRun(runId, status, outputOrError) {
+    const run = getRun(runId);
+    if (!run) return;
+    run.status = status;
+    run.endedAt = Date.now();
+    run.durationMs = run.endedAt - run.startedAt;
+    if (status === 'success') {
+        run.failedStep = null;
+        run.output = outputOrError || '';
+        run.steps.forEach(s => s.status = 'done');
+        run.artifacts = mergeArtifacts(run.artifacts, extractArtifactsFromMarkdown(outputOrError || '', runId));
+    } else {
+        run.error = outputOrError || '';
+        const failed = run.steps.find(s => s.status === 'failed') || run.steps.find(s => s.status === 'running') || run.steps[0];
+        if (failed) {
+            failed.status = 'failed';
+            run.failedStep = failed.label;
+        }
+    }
+    renderRunCard(runId);
+    renderSessionList();
+    refreshWorkspace();
+    saveSessions();
+}
+
+function mergeArtifacts(current, incoming) {
+    const map = new Map();
+    [...(current || []), ...(incoming || [])].forEach(a => {
+        if (!a || !a.path) return;
+        map.set(a.path, a);
+    });
+    return Array.from(map.values());
+}
+
+function renderRunCard(runId) {
+    const run = getRun(runId);
+    const el = document.getElementById(`run-card-${runId}`);
+    if (!run || !el) return;
+
+    const statusText = {
+        running: '运行中',
+        success: '成功',
+        failed: '失败',
+        interrupted: '已中断'
+    }[run.status] || run.status;
+
+    const statusColor = {
+        running: 'text-amber-300',
+        success: 'text-emerald-300',
+        failed: 'text-red-300',
+        interrupted: 'text-orange-300'
+    }[run.status] || 'text-gray-300';
+
+    const duration = run.status === 'running' ? formatDuration(Date.now() - run.startedAt) : formatDuration(run.durationMs);
+    const stepHtml = run.steps.map(step => {
+        const icon = step.status === 'done' ? '✓' : step.status === 'running' ? '…' : step.status === 'failed' ? '!' : '';
+        return `
+            <div class="step-node ${step.status}">
+                <span class="step-dot">${icon}</span>
+                <span class="step-label truncate">${step.label}</span>
+            </div>`;
+    }).join('<div class="h-px flex-1 bg-white/10 min-w-3"></div>');
+
+    el.className = `run-card ${run.status}`;
+    el.innerHTML = `
+        <div class="p-3 border-b border-white/5 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                    <span class="mono text-[10px] text-gray-500">${escapeHtml(run.id)}</span>
+                    <span class="${statusColor} text-[11px] font-medium">${statusText}</span>
+                </div>
+                <div class="text-[12px] text-gray-300 mt-1 truncate">${escapeHtml(run.query)}</div>
+            </div>
+            <div class="text-right shrink-0">
+                <div class="mono text-[12px] text-gray-300" id="run-duration-${run.id}">${duration}</div>
+                <div class="text-[10px] text-gray-600">${new Date(run.startedAt).toLocaleTimeString()}</div>
+            </div>
+        </div>
+        <div class="p-3">
+            <div class="flex items-center gap-2 overflow-x-auto pb-1">${stepHtml}</div>
+            ${run.failedStep ? `<div class="mt-3 text-[11px] text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">失败步骤：${escapeHtml(run.failedStep)}</div>` : ''}
+            <div class="mt-3 flex items-center gap-2">
+                <button onclick="openRunInWorkspace('${run.id}')" class="text-[11px] px-2.5 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300 hover:text-indigo-300">打开 Artifacts</button>
+                ${run.status === 'failed' ? `
+                    <button onclick="retryRun('${run.id}')" class="text-[11px] px-2.5 py-1.5 rounded-md border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-red-200">重试此步骤</button>
+                    <button onclick="continueRun('${run.id}')" class="text-[11px] px-2.5 py-1.5 rounded-md border border-amber-500/20 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200">从失败处继续</button>
+                ` : ''}
+            </div>
+        </div>`;
+}
+
+function renderRunCardShell(run) {
+    return `
+        <div class="flex space-x-3 group w-full" id="run-msg-${run.id}">
+            <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border bg-amber-500/10 border-amber-500/20 mt-0.5">
+                <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-[11px] font-semibold text-gray-300 mb-2">Run</div>
+                <div id="run-card-${run.id}" class="run-card running"></div>
+            </div>
+        </div>`;
+}
+
+async function toggleAction() {
+    if (isRunning) {
+        await fetch(`${API_BASE}/api/stop`, { method: 'POST' }).catch(() => {});
+        if (currentRunId) completeRun(currentRunId, 'interrupted', 'Execution interrupted by user.');
+        const errorId = 'err_' + Date.now();
+        renderHistoricalMessage({ id: errorId, role: 'error', text: 'Execution interrupted by user.' }, true);
+        setUIState(false);
+        return;
+    }
+
+    const inputEl = document.getElementById('user-query-input');
+    const query = inputEl.value.trim();
+    if (!query) return;
+
+    inputEl.value = "";
+    inputEl.style.height = 'auto';
+
+    const userMsgId = 'u_' + Date.now();
+    renderHistoricalMessage({ id: userMsgId, role: 'user', text: query }, true);
+
+    const currentSess = getActiveSession();
+    if (currentSess.chats.length === 1 && currentSess.name.startsWith('New Pipeline')) {
+        currentSess.name = query.substring(0, 18) + (query.length > 18 ? '...' : '');
+        renderSessionList();
+    }
+
+    currentAiMsgId = 'ai_' + Date.now();
+    const run = createRunRecord(query, currentAiMsgId);
+    currentRunId = run.id;
+
+    const container = document.getElementById('chat-history-container');
+    container.insertAdjacentHTML('beforeend', renderRunCardShell(run));
+    renderRunCard(run.id);
+
+    const aiSkeleton = `
+        <div class="flex space-x-3 group w-full" id="msg-${currentAiMsgId}">
+            <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border bg-indigo-500/20 border-indigo-500/30 mt-0.5">
+                <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <div class="flex-1 space-y-2 min-w-0">
+                <div class="text-[11px] font-semibold text-gray-300 flex items-center space-x-2"><span>Copilot Agent</span></div>
+                <details id="trace-details-${currentAiMsgId}" class="trace-box bg-[#111] border border-white/10 rounded-lg overflow-hidden transition-all">
+                    <summary class="cursor-pointer p-2.5 text-[11px] text-gray-400 font-medium flex items-center justify-between hover:bg-white/5 transition-colors select-none">
+                        <div class="flex items-center space-x-2">
+                            <svg id="icon-spin-${currentAiMsgId}" class="w-3.5 h-3.5 text-indigo-400 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            <svg id="icon-done-${currentAiMsgId}" class="w-3.5 h-3.5 text-emerald-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            <span id="summary-${currentAiMsgId}">Pipeline step log</span>
+                            <svg class="arrow-icon w-3 h-3 text-gray-500 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </div>
+                        <span id="timer-${currentAiMsgId}" class="mono text-gray-500">0.0s</span>
+                    </summary>
+                    <div class="px-3 pt-1 pb-3 border-t border-white/5 max-h-60 overflow-y-auto space-y-1 bg-[#050505]" id="logs-${currentAiMsgId}"></div>
+                </details>
+                <div id="content-${currentAiMsgId}" class="prose prose-invert max-w-none text-[13px] leading-relaxed text-gray-300 hidden"></div>
+                <div id="action-${currentAiMsgId}" class="hidden pt-2">
+                    <button onclick="previewReport('${currentAiMsgId}')" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-[11px] font-medium text-gray-300 hover:text-indigo-300 w-max shadow-sm">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <span>在右侧打开此报告</span>
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    container.insertAdjacentHTML('beforeend', aiSkeleton);
+    container.scrollTop = container.scrollHeight;
+
+    document.getElementById('api-trace-container').innerHTML = "<div class='text-[11px] text-gray-600 text-center mt-20 mono' id='api-empty-msg'>Developer trace is empty.</div>";
+
+    setUIState(true);
+    renderedLogCount = 0;
+    renderedTraceCount = 0;
+    latestApiTraces = [];
+    startTime = Date.now();
+
+    timerInterval = setInterval(() => {
+        const tBox = document.getElementById(`timer-${currentAiMsgId}`);
+        if (tBox) tBox.innerText = formatDuration(Date.now() - startTime);
+        const runDuration = document.getElementById(`run-duration-${run.id}`);
+        if (runDuration) runDuration.innerText = formatDuration(Date.now() - run.startedAt);
+    }, 100);
+
+    pollInterval = setInterval(fetchLogs, 500);
+
+    try {
+        const res = await fetch(`${API_BASE}/api/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, session_id: activeSessionId, client_run_id: run.id, username: getRuntimeUsername(), auth_token: getRuntimeAuthToken() })
+        });
+        const data = await res.json();
+        await fetchLogs();
+
+        if (!res.ok || !data.success) throw new Error(data.error || "Server error");
+
+        document.getElementById(`icon-spin-${currentAiMsgId}`).classList.add('hidden');
+        document.getElementById(`icon-done-${currentAiMsgId}`).classList.remove('hidden');
+        document.getElementById(`summary-${currentAiMsgId}`).innerText = "Pipeline step log (Completed)";
+
+        await streamRenderMarkdown(data.output, currentAiMsgId);
+        document.getElementById(`action-${currentAiMsgId}`).classList.remove('hidden');
+
+        currentSess.chats.push({ id: currentAiMsgId, role: 'agent', text: data.output, runId: run.id });
+        completeRun(run.id, 'success', data.output);
+        saveSessions();
+    } catch (err) {
+        if (err.message.includes('Aborted')) return;
+        completeRun(run.id, 'failed', err.message);
+        const errId = 'err_' + Date.now();
+        renderHistoricalMessage({ id: errId, role: 'error', text: err.message, runId: run.id }, true);
+    } finally {
+        setUIState(false);
+    }
+}
+
+async function fetchLogs() {
+    try {
+        const res = await fetch(`${API_BASE}/api/logs`);
+        const data = await res.json();
+        const logBox = document.getElementById(`logs-${currentAiMsgId}`);
+        if (currentRunId && Array.isArray(data.logs)) updateRunFromLogs(currentRunId, data.logs);
+
+        for (let i = renderedLogCount; i < (data.logs || []).length; i++) {
+            const log = data.logs[i];
+            if (logBox) {
+                const entry = document.createElement('div');
+                entry.className = 'text-[11px] mono leading-5';
+                const statusIcon = log.status === 'success' ? '✔' : log.status === 'error' ? '✖' : '➜';
+                const statusClass = log.status === 'success' ? 'text-emerald-400' : log.status === 'error' ? 'text-red-400' : 'text-amber-400';
+                entry.innerHTML = `<span class="${statusClass} mr-1.5">${statusIcon}</span><span class="text-gray-300">${escapeHtml(log.step || '')}</span>${log.message ? `<div class="pl-4 text-gray-500 mt-0.5 break-all">${escapeHtml(log.message)}</div>` : ''}`;
+                logBox.appendChild(entry);
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+        }
+        renderedLogCount = (data.logs || []).length;
+
+        if (data.api_traces) latestApiTraces = data.api_traces;
+        if (data.api_traces && data.api_traces.length > renderedTraceCount) {
+            renderApiTrace(data.api_traces.slice(renderedTraceCount));
+            renderedTraceCount = data.api_traces.length;
+        }
+    } catch(e) {}
+}
+
+function renderApiTrace(traces) {
+    const container = document.getElementById('api-trace-container');
+    const emptyMsg = document.getElementById('api-empty-msg');
+    if (emptyMsg && traces.length > 0) emptyMsg.remove();
+
+    traces.forEach(trace => {
+        const isReq = trace.type === 'request';
+        const tagColor = isReq ? 'bg-indigo-500/20 text-indigo-400' : (trace.status === 200 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400');
+        let bodyHtml = trace.body || '';
+        try { bodyHtml = JSON.stringify(JSON.parse(trace.body), null, 2); } catch {}
+        container.insertAdjacentHTML('beforeend', `
+            <div class="mb-5">
+                <div class="flex items-center space-x-3 mb-1.5">
+                    <span class="px-2 py-0.5 rounded ${tagColor} text-[10px] font-bold mono uppercase">${isReq ? (trace.method || 'POST') : trace.status}</span>
+                    <span class="text-[11px] text-gray-400 mono">${isReq ? escapeHtml(trace.url || '') : 'Response'}</span>
+                    <span class="text-[10px] text-gray-600 mono ml-auto">${escapeHtml(trace.timestamp || '')}</span>
+                </div>
+                <div class="bg-[#0A0A0A] border panel-divider rounded-lg p-3 overflow-x-auto max-h-80">
+                    <pre class="text-[11px] mono text-gray-400 whitespace-pre-wrap m-0">${escapeHtml(bodyHtml)}</pre>
+                </div>
+            </div>`);
+    });
+    container.scrollTop = container.scrollHeight;
+}
+
+async function streamRenderMarkdown(fullMarkdown, msgId) {
+    const chatBox = document.getElementById(`content-${msgId}`);
+    chatBox.classList.remove('hidden');
+
+    let currentText = "";
+    const chunkSize = Math.max(1, Math.floor((fullMarkdown || '').length / 50));
+    for (let i = 0; i < fullMarkdown.length; i += chunkSize) {
+        currentText += fullMarkdown.substring(i, i + chunkSize);
+        chatBox.innerHTML = safeMarkdown(currentText);
+        const chatContainer = document.getElementById('chat-history-container');
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        await new Promise(r => setTimeout(r, 15));
+    }
+    chatBox.innerHTML = safeMarkdown(fullMarkdown);
+    previewReport(msgId);
+}
+
+function renderHistoricalMessage(chat, save=false) {
+    const container = document.getElementById('chat-history-container');
+    let html = '';
+
+    if (chat.role === 'agent') {
+        html = `
+        <div class="flex space-x-3 group w-full" id="msg-${chat.id}">
+            <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border bg-indigo-500/20 border-indigo-500/30 mt-0.5">
+                <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <div class="flex-1 space-y-2 min-w-0">
+                <div class="text-[11px] font-semibold text-gray-300 flex items-center space-x-2"><span>Copilot Agent</span></div>
+                <div class="prose prose-invert max-w-none text-[13px] leading-relaxed text-gray-300">${safeMarkdown(chat.text)}</div>
+                <div class="pt-2">
+                    <button onclick="previewReport('${chat.id}')" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-[11px] font-medium text-gray-300 hover:text-indigo-300 w-max shadow-sm">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                        <span>在右侧画板打开此报告</span>
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    } else if (chat.role === 'user') {
+        html = `
+        <div class="flex space-x-3 group w-full" id="msg-${chat.id}">
+            <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border bg-white/5 border-white/10 mt-0.5">
+                <svg class="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            </div>
+            <div class="flex-1 space-y-1 min-w-0">
+                <div class="text-[11px] font-semibold text-gray-300 flex items-center space-x-2"><span>You</span></div>
+                <div class="text-[13px] leading-relaxed text-gray-300 whitespace-pre-wrap">${escapeHtml(chat.text)}</div>
+            </div>
+        </div>`;
+    } else if (chat.role === 'error') {
+        html = `
+        <div class="flex space-x-3 group w-full" id="msg-${chat.id}">
+            <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border bg-red-500/10 border-red-500/20 mt-0.5">
+                <svg class="w-3.5 h-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div class="flex-1 space-y-1 min-w-0">
+                <div class="text-[11px] font-semibold text-gray-300 flex items-center space-x-2"><span>Exception</span></div>
+                <div class="text-[13px] leading-relaxed text-red-400 bg-red-500/5 p-3 rounded-lg border border-red-500/10">${escapeHtml(chat.text)}</div>
+            </div>
+        </div>`;
+    }
+
+    container.insertAdjacentHTML('beforeend', html);
+    container.scrollTop = container.scrollHeight;
+
+    if (save) {
+        const s = getActiveSession();
+        s.chats.push(chat);
+        s.updatedAt = Date.now();
+        saveSessions();
+    }
+}
+
+window.previewReport = function(msgId) {
+    const s = getActiveSession();
+    const chat = s.chats.find(c => c.id === msgId);
+    if (!chat) return;
+
+    const reportFile = {
+        path: `report://${msgId}`,
+        name: `report_${msgId}.md`,
+        type: 'markdown',
+        content: chat.text,
+        source: 'message',
+        runId: chat.runId
+    };
+    openFile(reportFile);
+    setWorkspaceView('report');
+};
+
+function openRunInWorkspace(runId) {
+    const run = getRun(runId);
+    if (!run) return;
+    if (run.output) {
+        openFile({ path: `run://${runId}/report.md`, name: `${runId}_report.md`, type: 'markdown', content: run.output, source: 'run', runId });
+        setWorkspaceView('report');
+    } else {
+        setWorkspaceView('logs');
+    }
+    renderFileTree(runId);
+}
+
+function retryRun(runId) {
+    const run = getRun(runId);
+    if (!run) return;
+    const failed = run.failedStep || '失败步骤';
+    const input = document.getElementById('user-query-input');
+    input.value = `请重试刚才失败的步骤：${failed}\n原始任务：${run.query}`;
+    input.focus();
+    input.style.height = '';
+    input.style.height = input.scrollHeight + 'px';
+}
+
+function continueRun(runId) {
+    const run = getRun(runId);
+    if (!run) return;
+    const failed = run.failedStep || '失败步骤';
+    const input = document.getElementById('user-query-input');
+    input.value = `请从失败步骤继续执行，不要重复已完成步骤。\n失败步骤：${failed}\n原始任务：${run.query}`;
+    input.focus();
+    input.style.height = '';
+    input.style.height = input.scrollHeight + 'px';
+}
+
+/* Workspace */
+async function loadIgnoreRules() {
+    const candidates = [`${EXPLORER_BASE}/api/workspace/ignore`, `${EXPLORER_BASE}/output/.ignore`, `${EXPLORER_BASE}/.ignore`];
+    for (const url of candidates) {
+        try {
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            const text = await res.text();
+            ignoreRules = [...DEFAULT_IGNORE_RULES, ...text.split(/\r?\n/).map(x => x.trim()).filter(x => x && !x.startsWith('#'))];
+            return;
+        } catch {}
+    }
+}
+
+function shouldIgnore(path) {
+    const p = String(path || '').replace(/\\/g, '/');
+    const base = p.split('/').pop();
+    return ignoreRules.some(rule => {
+        if (!rule) return false;
+        const r = rule.replace(/\\/g, '/');
+        if (r.endsWith('/')) return p.includes('/' + r.slice(0, -1) + '/') || p.startsWith(r.slice(0, -1) + '/');
+        if (r.includes('*')) {
+            const re = new RegExp('^' + r.split('*').map(x => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+            return re.test(base) || re.test(p);
+        }
+        return base === r || p === r || p.includes('/' + r + '/');
+    });
+}
+
+function getExt(path) {
+    return (String(path || '').split('?')[0].split('.').pop() || '').toLowerCase();
+}
+
+function getFileType(path) {
+    const ext = getExt(path);
+    if (ext === 'png') return 'image';
+    if (['csv', 'tsv'].includes(ext)) return 'table';
+    if (['md', 'markdown'].includes(ext)) return 'markdown';
+    if (['py', 'r', 'sh', 'js', 'ts', 'html', 'css', 'json', 'yaml', 'yml', 'toml', 'sql'].includes(ext)) return 'code';
+    if (['txt', 'log'].includes(ext)) return 'text';
+    return 'download';
+}
+
+function extractArtifactsFromMarkdown(markdown, runId = null) {
+    const artifacts = [];
+    const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    let m;
+    while ((m = imgRegex.exec(markdown || '')) !== null) {
+        const path = m[2].replace(/^['"]|['"]$/g, '').trim();
+        if (!path || shouldIgnore(path)) continue;
+        artifacts.push({ path, url: normalizeAssetUrl(path), name: m[1] || shortPath(path).split('/').pop(), type: 'image', runId });
+    }
+    while ((m = linkRegex.exec(markdown || '')) !== null) {
+        const path = m[2].replace(/^['"]|['"]$/g, '').trim();
+        if (!path || path.startsWith('http') || shouldIgnore(path)) continue;
+        const type = getFileType(path);
+        artifacts.push({ path, url: pathToUrl(path), name: m[1] || shortPath(path).split('/').pop(), type, runId });
+    }
+    return artifacts;
+}
+
+function collectSessionArtifacts() {
+    const s = getActiveSession();
+    let artifacts = [];
+    (s.runs || []).forEach(run => {
+        artifacts = mergeArtifacts(artifacts, (run.artifacts || []).map(a => ({ ...a, runId: run.id })));
+        if (run.output) artifacts = mergeArtifacts(artifacts, extractArtifactsFromMarkdown(run.output, run.id));
+        artifacts.push({
+            path: `run://${run.id}/report.md`,
+            name: `${run.id}_report.md`,
+            type: 'markdown',
+            source: 'run',
+            content: run.output || '',
+            runId: run.id
+        });
+        artifacts.push({
+            path: `run://${run.id}/logs.json`,
+            name: `${run.id}_logs.json`,
+            type: 'json',
+            source: 'run',
+            content: JSON.stringify(run.logs || [], null, 2),
+            runId: run.id
+        });
+    });
+    (s.chats || []).filter(c => c.role === 'agent').forEach(chat => {
+        artifacts = mergeArtifacts(artifacts, extractArtifactsFromMarkdown(chat.text, chat.runId));
+    });
+    return artifacts.filter(a => a && a.path && !shouldIgnore(a.path));
+}
+
+async function fetchWorkspaceTree() {
+    const runId = currentRunId || '';
+    const root = document.getElementById('workspace-root')?.value || 'all';
+    const urls = [
+        `${EXPLORER_BASE}/api/workspace/tree?session_id=${encodeURIComponent(activeSessionId)}&run_id=${encodeURIComponent(runId)}&root=${encodeURIComponent(root)}`,
+        `${EXPLORER_BASE}/api/artifacts?session_id=${encodeURIComponent(activeSessionId)}&run_id=${encodeURIComponent(runId)}&root=${encodeURIComponent(root)}`
+    ];
+    for (const url of urls) {
+        try {
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const files = Array.isArray(data) ? data : (data.files || data.artifacts || []);
+            if (files.length) {
+                return files.map(f => ({
+                    path: f.path || f.url || f.name,
+                    url: f.url || pathToUrl(f.path || f.name),
+                    name: f.name || String(f.path || '').split('/').pop(),
+                    type: f.type || getFileType(f.path || f.url || f.name),
+                    runId: f.run_id || f.runId || null
+                })).filter(f => !shouldIgnore(f.path));
+            }
+        } catch {}
+    }
+    return collectSessionArtifacts();
+}
+
+async function refreshWorkspace() {
+    const status = document.getElementById('workspace-status');
+    if (status) status.innerText = 'loading...';
+    window.__workspaceFiles = await fetchWorkspaceTree();
+    renderFileTree();
+    renderCurrentWorkspaceView();
+    if (status) status.innerText = `${window.__workspaceFiles.length} files`;
+}
+
+function buildTree(files) {
+    const root = { name: 'workspace', type: 'dir', children: {}, path: '' };
+    files.forEach(file => {
+        const normalized = shortPath(file.path).replace(/^\/+/, '');
+        const parts = normalized.split('/').filter(Boolean);
+        let node = root;
+        parts.forEach((part, idx) => {
+            const isFile = idx === parts.length - 1;
+            if (!node.children[part]) {
+                node.children[part] = {
+                    name: part,
+                    type: isFile ? 'file' : 'dir',
+                    children: {},
+                    path: parts.slice(0, idx + 1).join('/'),
+                    file: isFile ? file : null
+                };
+            }
+            node = node.children[part];
+        });
+    });
+    return root;
+}
+
+function renderFileTree(runFilterId = null) {
+    const treeEl = document.getElementById('file-tree');
+    const filter = (document.getElementById('file-filter')?.value || '').toLowerCase().trim();
+    let files = window.__workspaceFiles || collectSessionArtifacts();
+    if (runFilterId) files = files.filter(f => !f.runId || f.runId === runFilterId);
+    if (filter) files = files.filter(f => `${f.path} ${f.name}`.toLowerCase().includes(filter));
+    files = files.filter(f => !shouldIgnore(f.path));
+
+    if (!files.length) {
+        treeEl.innerHTML = `
+            <div class="p-4 text-center text-gray-600 text-[12px] leading-relaxed">
+                暂无 artifacts。<br/>
+                运行完成后会显示报告、图片、CSV 和日志。<br/>
+                若需要完整文件夹浏览，请后端提供 <span class="mono text-gray-500">/api/workspace/tree</span>。
+            </div>`;
+        return;
+    }
+
+    const tree = buildTree(files);
+    if (!localStorage.getItem('scrna_folder_state_initialized_v1')) {
+        collectFolderKeys(tree).forEach(k => collapsedFolders.add(k));
+        localStorage.setItem('scrna_collapsed_folders_v1', JSON.stringify(Array.from(collapsedFolders)));
+        localStorage.setItem('scrna_folder_state_initialized_v1', 'true');
+    }
+    treeEl.innerHTML = renderTreeNode(tree, 0);
+}
+
+function collectFolderKeys(node) {
+    let keys = [];
+    if (node && node.type === 'dir' && node.path) keys.push(node.path);
+    Object.values(node.children || {}).forEach(child => {
+        if (child.type === 'dir') keys = keys.concat(collectFolderKeys(child));
+    });
+    return keys;
+}
+
+function renderTreeNode(node, depth) {
+    if (node.type === 'file') {
+        const file = node.file;
+        const icon = fileIcon(file.type || getFileType(file.path));
+        const pathKey = escapeAttr(file.path);
+        const active = activeFilePath === file.path ? 'active' : '';
+        return `
+            <button class="file-row ${active} w-full flex items-center gap-1.5 px-2 py-1 rounded text-left text-[11px] text-gray-400" style="padding-left:${depth * 12 + 8}px" onclick="openFileByPath('${pathKey}')">
+                ${icon}
+                <span class="truncate">${escapeHtml(file.name || node.name)}</span>
+            </button>`;
+    }
+
+    const children = Object.values(node.children || {}).sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'dir' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+    });
+
+    const folderKey = node.path || node.name || 'workspace';
+    const isRoot = depth === 0;
+    const collapsed = !isRoot && collapsedFolders.has(folderKey);
+    const arrow = collapsed ? '▸' : '▾';
+    const childCount = children.length;
+
+    const folderLine = isRoot ? `
+        <div class="px-2 py-1.5 text-[10px] text-gray-500 uppercase tracking-wider font-semibold flex items-center gap-1.5">
+            <span class="text-gray-600">▾</span>
+            <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+            <span>${escapeHtml(node.name)}</span>
+            <span class="mono text-[9px] text-gray-700 ml-auto">${childCount}</span>
+        </div>` : `
+        <button class="w-full px-2 py-1 text-[11px] text-gray-500 flex items-center gap-1.5 rounded hover:bg-white/5 text-left" style="padding-left:${depth * 12 + 8}px" onclick="toggleFolderNode('${escapeAttr(folderKey)}')">
+            <span class="w-3 text-gray-600">${arrow}</span>
+            <svg class="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7h7l2 2h9v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+            <span class="truncate">${escapeHtml(node.name)}</span>
+            <span class="mono text-[9px] text-gray-700 ml-auto">${childCount}</span>
+        </button>`;
+
+    if (collapsed) return folderLine;
+    return folderLine + children.map(child => renderTreeNode(child, depth + 1)).join('');
+}
+
+function toggleFolderNode(folderKey) {
+    if (collapsedFolders.has(folderKey)) collapsedFolders.delete(folderKey);
+    else collapsedFolders.add(folderKey);
+    localStorage.setItem('scrna_collapsed_folders_v1', JSON.stringify(Array.from(collapsedFolders)));
+    renderFileTree();
+}
+
+function fileIcon(type) {
+    if (type === 'image') return '<span class="text-emerald-400">▧</span>';
+    if (type === 'table') return '<span class="text-amber-400">▦</span>';
+    if (type === 'markdown') return '<span class="text-indigo-400">M</span>';
+    if (type === 'code') return '<span class="text-purple-400">&lt;/&gt;</span>';
+    if (type === 'text') return '<span class="text-sky-400">T</span>';
+    return '<span class="text-gray-500">↓</span>';
+}
+
+function openFileByPath(path) {
+    const files = window.__workspaceFiles || collectSessionArtifacts();
+    const file = files.find(f => f.path === path);
+    if (file) openFile(file);
+}
+
+async function openFile(file) {
+    if (!file) return;
+    activeFilePath = file.path;
+    if (!openedFiles.find(f => f.path === file.path)) openedFiles.push(file);
+    renderEditorTabs();
+
+    if (workspaceView === 'explorer') {
+        if (file.type === 'image') setWorkspaceView('gallery', false);
+        else if (file.type === 'table') setWorkspaceView('tables', false);
+        else if (file.type === 'markdown') setWorkspaceView('report', false);
+    }
+    await renderFilePreview(file);
+    renderFileTree();
+}
+
+function renderEditorTabs() {
+    const tabs = document.getElementById('editor-tabs');
+    if (!openedFiles.length) {
+        tabs.innerHTML = `<div class="px-3 text-[11px] text-gray-600">No opened files</div>`;
+        return;
+    }
+    tabs.innerHTML = openedFiles.map(f => `
+        <button class="editor-tab ${activeFilePath === f.path ? 'active' : ''} h-full flex items-center gap-2 px-3 border-t border-transparent border-r border-white/5 text-[11px] text-gray-400 hover:text-gray-200 min-w-0" onclick="openFileByPath('${escapeAttr(f.path)}')">
+            <span class="truncate max-w-[180px]">${escapeHtml(f.name || shortPath(f.path).split('/').pop())}</span>
+            <span onclick="event.stopPropagation(); closeEditorTab('${escapeAttr(f.path)}')" class="text-gray-600 hover:text-red-300">×</span>
+        </button>`).join('');
+}
+
+function closeEditorTab(path) {
+    openedFiles = openedFiles.filter(f => f.path !== path);
+    if (activeFilePath === path) {
+        activeFilePath = openedFiles[0]?.path || null;
+        if (activeFilePath) openFileByPath(activeFilePath);
+        else renderCurrentWorkspaceView();
+    }
+    renderEditorTabs();
+}
+
+function setWorkspaceView(view, rerender = true) {
+    workspaceView = view;
+    ['explorer', 'report', 'gallery', 'tables', 'logs'].forEach(v => {
+        document.getElementById(`tab-${v}`)?.classList.toggle('active', v === view);
+    });
+    if (rerender) renderCurrentWorkspaceView();
+}
+
+function renderCurrentWorkspaceView() {
+    if (activeFilePath) {
+        const f = (window.__workspaceFiles || collectSessionArtifacts()).find(x => x.path === activeFilePath);
+        if (f && ['report', 'tables', 'gallery', 'explorer'].includes(workspaceView)) {
+            renderFilePreview(f);
+            return;
+        }
+    }
+    if (workspaceView === 'gallery') renderWorkspaceGallery();
+    else if (workspaceView === 'tables') renderWorkspaceTables();
+    else if (workspaceView === 'logs') renderWorkspaceLogs();
+    else if (workspaceView === 'report') renderLatestReport();
+    else renderWorkspaceEmpty();
+}
+
+function renderWorkspaceEmpty() {
+    document.getElementById('workspace-content').innerHTML = `
+        <div class="h-full flex flex-col items-center justify-center text-gray-600 space-y-4">
+            <svg class="w-12 h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+            <p class="text-[13px] tracking-wide">Awaiting Pipeline Artifacts...</p>
+        </div>`;
+}
+
+function renderLatestReport() {
+    const s = getActiveSession();
+    const last = [...s.chats].reverse().find(c => c.role === 'agent');
+    if (last) {
+        openFile({ path: `report://${last.id}`, name: `report_${last.id}.md`, type: 'markdown', content: last.text, source: 'message', runId: last.runId });
+    } else {
+        renderWorkspaceEmpty();
+    }
+}
+
+async function renderFilePreview(file) {
+    const content = document.getElementById('workspace-content');
+    const type = file.type || getFileType(file.path);
+    const title = escapeHtml(file.name || shortPath(file.path).split('/').pop());
+    const url = file.url || pathToUrl(file.path);
+    const downloadUrl = `${EXPLORER_BASE}/api/download?path=${encodeURIComponent(file.path)}`;
+
+    let preview = null;
+    try {
+        const res = await fetch(`${EXPLORER_BASE}/api/file/preview?path=${encodeURIComponent(file.path)}&table_rows=20&max_bytes=200000`);
+        if (res.ok) preview = await res.json();
+    } catch {}
+
+    if (type === 'image' && getExt(file.path) === 'png') {
+        content.innerHTML = `
+            <div class="h-full overflow-auto p-8 bg-[#000]">
+                <div class="max-w-5xl mx-auto">
+                    <div class="mb-4 flex items-center justify-between">
+                        <div>
+                            <div class="text-sm text-gray-200 font-medium">${title}</div>
+                            <div class="text-[11px] text-gray-600 mono mt-1">${escapeHtml(shortPath(file.path))}</div>
+                        </div>
+                        <div class="flex gap-2">
+                            <a href="${escapeHtml(downloadUrl)}" class="text-[11px] px-3 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">Download</a>
+                            <button onclick="openLightbox('${escapeAttr(url)}', '${escapeAttr(title)}')" class="text-[11px] px-3 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">Open Lightbox</button>
+                        </div>
+                    </div>
+                    <img src="${escapeHtml(url)}" class="w-full h-auto rounded-xl border border-white/10 shadow-2xl bg-black cursor-zoom-in" onclick="openLightbox('${escapeAttr(url)}', '${escapeAttr(title)}')" />
+                </div>
+            </div>`;
+    } else if (type === 'markdown') {
+        const md = preview?.content ?? file.content ?? '';
+        content.innerHTML = `
+            <div class="h-full overflow-auto p-8 lg:p-12">
+                <div class="mb-4 flex justify-end">
+                    <a href="${escapeHtml(downloadUrl)}" class="text-[11px] px-3 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">Download</a>
+                </div>
+                <div class="max-w-4xl mx-auto prose max-w-none text-gray-300">${safeMarkdown(md || '')}</div>
+            </div>`;
+    } else if (type === 'table') {
+        const text = preview?.content ?? file.content ?? '';
+        content.innerHTML = renderCsvPreview(text, file, downloadUrl, preview?.truncated);
+    } else if (type === 'code' || type === 'text') {
+        const text = preview?.content ?? file.content ?? '';
+        content.innerHTML = `
+            <div class="h-full overflow-auto bg-[#050505]">
+                <div class="px-4 py-3 border-b panel-divider flex items-center justify-between bg-[#0A0A0A] sticky top-0">
+                    <div>
+                        <div class="text-sm text-gray-200 font-medium">${title}</div>
+                        <div class="text-[11px] text-gray-600 mono mt-1">${escapeHtml(shortPath(file.path))}${preview?.truncated ? ' · preview truncated' : ''}</div>
+                    </div>
+                    <a href="${escapeHtml(downloadUrl)}" class="text-[11px] px-3 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">Download</a>
+                </div>
+                <pre class="mono text-[11px] leading-relaxed text-gray-300 p-4 whitespace-pre-wrap">${escapeHtml(text || 'Unable to preview this file.')}</pre>
+            </div>`;
+    } else {
+        content.innerHTML = `
+            <div class="h-full flex items-center justify-center p-8">
+                <div class="max-w-md rounded-2xl border border-white/10 bg-[#0A0A0A] p-6 text-center">
+                    <div class="text-sm text-gray-200 font-medium">${title}</div>
+                    <div class="text-[11px] text-gray-600 mono mt-2 break-all">${escapeHtml(shortPath(file.path))}</div>
+                    <div class="text-[12px] text-gray-500 mt-4">此类型不在前端预览范围内，仅提供下载。</div>
+                    <a href="${escapeHtml(downloadUrl)}" class="inline-flex mt-5 text-[12px] px-4 py-2 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">Download File</a>
+                </div>
+            </div>`;
+    }
+    renderEditorTabs();
+}
+
+
+async function fetchTextSafe(url) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('fetch failed');
+        return await res.text();
+    } catch {
+        return '';
+    }
+}
+
+function renderCsvPreview(text, file, url, truncated=false) {
+    const rows = parseDelimited(text || '', getExt(file.path) === 'tsv' ? '\t' : ',').slice(0, 20);
+    const header = rows[0] || [];
+    const body = rows.slice(1);
+    return `
+        <div class="h-full overflow-auto bg-[#000]">
+            <div class="px-4 py-3 border-b panel-divider flex items-center justify-between bg-[#0A0A0A] sticky top-0 z-10">
+                <div>
+                    <div class="text-sm text-gray-200 font-medium">${escapeHtml(file.name || shortPath(file.path).split('/').pop())}</div>
+                    <div class="text-[11px] text-gray-600 mono mt-1">${escapeHtml(shortPath(file.path))}${truncated ? ' · large file, preview limited' : ''}</div>
+                </div>
+                <a href="${escapeHtml(url)}" class="text-[11px] px-3 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">Download CSV</a>
+            </div>
+            <div class="p-4">
+                <div class="text-[11px] text-gray-600 mb-2">仅预览前 20 行，大表请下载查看。</div>
+                <div class="overflow-auto rounded-xl border border-white/10">
+                    <table class="w-full border-collapse text-[11px]">
+                        <thead><tr>${header.map(h => `<th class="bg-[#111] text-gray-300 text-left px-3 py-2 border-b border-white/10">${escapeHtml(h)}</th>`).join('')}</tr></thead>
+                        <tbody>${body.map(r => `<tr>${header.map((_, i) => `<td class="px-3 py-2 border-b border-white/5 text-gray-400">${escapeHtml(r[i] || '')}</td>`).join('')}</tr>`).join('')}</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+}
+
+
+function parseDelimited(text, delim) {
+    const lines = String(text || '').split(/\r?\n/).filter(Boolean);
+    return lines.map(line => {
+        const out = [];
+        let cur = '', q = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+            else if (ch === '"') q = !q;
+            else if (ch === delim && !q) { out.push(cur); cur = ''; }
+            else cur += ch;
+        }
+        out.push(cur);
+        return out;
+    });
+}
+
+function renderWorkspaceGallery() {
+    const files = (window.__workspaceFiles || collectSessionArtifacts()).filter(f => (f.type || getFileType(f.path)) === 'image');
+    const content = document.getElementById('workspace-content');
+    if (!files.length) {
+        content.innerHTML = `<div class="h-full flex items-center justify-center text-gray-600 text-[13px]">No images found.</div>`;
+        return;
+    }
+    content.innerHTML = `
+        <div class="p-6">
+            <div class="mb-4 flex items-center justify-between">
+                <div>
+                    <div class="text-sm text-gray-200 font-medium">Image Gallery</div>
+                    <div class="text-[11px] text-gray-600">${files.length} images</div>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
+                ${files.map(f => {
+                    const url = f.url || pathToUrl(f.path);
+                    const name = f.name || shortPath(f.path).split('/').pop();
+                    return `
+                    <button onclick="openFileByPath('${escapeAttr(f.path)}')" class="group text-left rounded-xl border border-white/10 bg-[#0A0A0A] overflow-hidden hover:border-indigo-500/40 transition-all">
+                        <div class="aspect-video bg-black overflow-hidden"><img src="${escapeHtml(url)}" class="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"/></div>
+                        <div class="p-2 border-t border-white/5">
+                            <div class="text-[11px] text-gray-300 truncate">${escapeHtml(name)}</div>
+                            <div class="text-[10px] text-gray-600 truncate mono mt-0.5">${escapeHtml(shortPath(f.path))}</div>
+                        </div>
+                    </button>`;
+                }).join('')}
+            </div>
+        </div>`;
+}
+
+function renderWorkspaceTables() {
+    const files = (window.__workspaceFiles || collectSessionArtifacts()).filter(f => (f.type || getFileType(f.path)) === 'table');
+    const content = document.getElementById('workspace-content');
+    if (!files.length) {
+        content.innerHTML = `<div class="h-full flex items-center justify-center text-gray-600 text-[13px]">No CSV/TSV tables found.</div>`;
+        return;
+    }
+    content.innerHTML = `
+        <div class="p-6 max-w-5xl">
+            <div class="text-sm text-gray-200 font-medium mb-4">Tables</div>
+            <div class="space-y-2">
+                ${files.map(f => {
+                    const url = `${EXPLORER_BASE}/api/download?path=${encodeURIComponent(f.path)}`;
+                    return `
+                    <div class="rounded-xl border border-white/10 bg-[#0A0A0A] p-3 flex items-center justify-between gap-3">
+                        <button onclick="openFileByPath('${escapeAttr(f.path)}')" class="min-w-0 text-left">
+                            <div class="text-[12px] text-gray-200 truncate">${escapeHtml(f.name || shortPath(f.path).split('/').pop())}</div>
+                            <div class="text-[10px] text-gray-600 mono truncate mt-1">${escapeHtml(shortPath(f.path))}</div>
+                        </button>
+                        <a href="${escapeHtml(url)}" download class="shrink-0 text-[11px] px-3 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">Download CSV</a>
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>`;
+}
+
+function renderWorkspaceLogs() {
+    const s = getActiveSession();
+    const runs = s.runs || [];
+    const content = document.getElementById('workspace-content');
+    if (!runs.length) {
+        content.innerHTML = `<div class="h-full flex items-center justify-center text-gray-600 text-[13px]">No run logs.</div>`;
+        return;
+    }
+    content.innerHTML = `
+        <div class="p-6 space-y-4">
+            ${runs.map(run => `
+                <div class="rounded-xl border border-white/10 bg-[#0A0A0A] overflow-hidden">
+                    <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+                        <div>
+                            <div class="mono text-[11px] text-gray-300">${escapeHtml(run.id)}</div>
+                            <div class="text-[11px] text-gray-600 mt-1">${escapeHtml(run.status)} · ${formatDuration(run.durationMs || (run.status === 'running' ? Date.now() - run.startedAt : 0))}</div>
+                        </div>
+                        ${run.failedStep ? `<span class="text-[11px] text-red-300">Failed: ${escapeHtml(run.failedStep)}</span>` : ''}
+                    </div>
+                    <div class="p-3 space-y-1 max-h-72 overflow-auto">
+                        ${(run.logs || []).length ? (run.logs || []).map(log => `
+                            <div class="mono text-[11px] leading-5">
+                                <span class="${log.status === 'success' ? 'text-emerald-400' : log.status === 'error' ? 'text-red-400' : 'text-amber-400'}">${log.status === 'success' ? '✔' : log.status === 'error' ? '✖' : '➜'}</span>
+                                <span class="text-gray-300 ml-1">${escapeHtml(log.step || '')}</span>
+                                ${log.message ? `<div class="text-gray-600 pl-5 break-all">${escapeHtml(log.message)}</div>` : ''}
+                            </div>`).join('') : `<div class="text-[11px] text-gray-600">No logs captured.</div>`}
+                    </div>
+                </div>`).join('')}
+        </div>`;
+}
+
+document.getElementById('user-query-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (!isRunning) toggleAction();
+    }
+});
+
+/* Lightbox */
+function openLightbox(url, caption) {
+    document.getElementById('lightbox-img').src = url;
+    document.getElementById('lightbox-caption').innerText = caption || '';
+    document.getElementById('lightbox-modal').classList.remove('hidden');
+}
+function closeLightbox() {
+    document.getElementById('lightbox-modal').classList.add('hidden');
+    document.getElementById('lightbox-img').src = '';
+}
+
+
+function initResizableLayout() {
+    const sidebar = document.getElementById('left-sidebar');
+    const chat = document.getElementById('chat-panel');
+
+    const savedSidebar = localStorage.getItem('scrna_layout_sidebar_w');
+    const savedChat = localStorage.getItem('scrna_layout_chat_w');
+
+    if (savedSidebar) document.documentElement.style.setProperty('--sidebar-w', savedSidebar);
+    if (savedChat) document.documentElement.style.setProperty('--chat-w', savedChat);
+
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+
+    document.querySelectorAll('.resize-handle').forEach(handle => {
+        handle.addEventListener('mousedown', (e) => {
+            if (document.body.classList.contains('workspace-fullscreen')) return;
+            e.preventDefault();
+
+            const mode = handle.dataset.resize;
+            const startX = e.clientX;
+            const startSidebarW = sidebar.getBoundingClientRect().width;
+            const startChatW = chat.getBoundingClientRect().width;
+            const viewportW = window.innerWidth;
+
+            handle.classList.add('active');
+            document.body.classList.add('is-resizing');
+
+            const onMove = (ev) => {
+                const dx = ev.clientX - startX;
+
+                if (mode === 'sidebar') {
+                    const next = clamp(startSidebarW + dx, 60, Math.min(560, viewportW * 0.45));
+                    document.documentElement.style.setProperty('--sidebar-w', `${next}px`);
+                    localStorage.setItem('scrna_layout_sidebar_w', `${next}px`);
+                    if (next > 80 && document.body.classList.contains('sidebar-collapsed')) {
+                        document.body.classList.remove('sidebar-collapsed');
+                        localStorage.setItem('scrna_copilot_sidebar_collapsed', 'false');
+                    }
+                }
+
+                if (mode === 'chat') {
+                    const next = clamp(startChatW + dx, 320, Math.min(820, viewportW * 0.7));
+                    document.documentElement.style.setProperty('--chat-w', `${next}px`);
+                    localStorage.setItem('scrna_layout_chat_w', `${next}px`);
+                }
+            };
+
+            const onUp = () => {
+                handle.classList.remove('active');
+                document.body.classList.remove('is-resizing');
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+            };
+
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        });
+    });
+}
+
+function toggleWorkspaceFullscreen() {
+    document.body.classList.toggle('workspace-fullscreen');
+    const isFull = document.body.classList.contains('workspace-fullscreen');
+    const label = document.getElementById('workspace-fullscreen-label');
+    if (label) label.innerText = isFull ? 'Exit' : 'Fullscreen';
+    localStorage.setItem('scrna_workspace_fullscreen', isFull ? 'true' : 'false');
+}
+
+
+
+function triggerDataUpload() {
+    document.getElementById('data-upload-input')?.click();
+}
+
+function triggerSkillUpload() {
+    document.getElementById('skill-upload-input')?.click();
+}
+
+async function uploadFiles(kind, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    const form = new FormData();
+    files.forEach(f => form.append('files', f));
+
+    const endpoint = kind === 'skill' ? '/api/upload/skill' : '/api/upload/data';
+    const status = document.getElementById('workspace-status');
+    if (status) status.innerText = `uploading ${files.length} file(s)...`;
+
+    try {
+        const res = await fetch(`${EXPLORER_BASE}${endpoint}`, { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'upload failed');
+
+        const saved = [...(data.saved || []), ...(data.extracted || [])];
+        if (status) status.innerText = `uploaded ${saved.length} file(s)`;
+        await refreshWorkspace();
+    } catch (err) {
+        if (status) status.innerText = `upload failed`;
+        alert(`上传失败：${err.message}`);
+    } finally {
+        const input = kind === 'skill' ? document.getElementById('skill-upload-input') : document.getElementById('data-upload-input');
+        if (input) input.value = '';
+    }
+}
+
+
+/* Settings */
+function applySettingsToUI() {
+    if (localStorage.getItem('scrna_copilot_sidebar_collapsed') === 'true') document.body.classList.add('sidebar-collapsed');
+    if (localStorage.getItem('scrna_workspace_fullscreen') === 'true') document.body.classList.add('workspace-fullscreen');
+    const fsLabel = document.getElementById('workspace-fullscreen-label');
+    if (fsLabel) fsLabel.innerText = document.body.classList.contains('workspace-fullscreen') ? 'Exit' : 'Fullscreen';
+    document.body.classList.toggle('dev-mode', !!settings.devMode);
+    document.getElementById('auth-chip').innerText = isLoggedIn ? (currentUser.username || 'LOGGED IN') : 'GUEST';
+    document.getElementById('auth-chip').className = `text-[10px] mono px-2 py-1 rounded border ${isLoggedIn ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : 'border-white/10 bg-white/[0.03] text-gray-500'}`;
+}
+
+function openSettingsModal() {
+    renderSettingsState();
+    document.getElementById('settings-modal').classList.remove('hidden');
+}
+
+function closeSettingsModal() {
+    document.getElementById('settings-modal').classList.add('hidden');
+}
+
+function renderSettingsState() {
+    document.getElementById('setting-api-base').value = settings.apiBase || API_BASE;
+    document.getElementById('setting-model').value = settings.model || 'deepseek-chat';
+    document.getElementById('setting-dev-mode').checked = !!settings.devMode;
+    document.getElementById('setting-auto-refresh').checked = !!settings.autoRefreshWorkspace;
+
+    document.getElementById('login-title').innerText = isLoggedIn ? `Logged In: ${currentUser.name || currentUser.username}` : 'Guest Mode';
+    document.getElementById('login-desc').innerText = isLoggedIn ? `聊天记录保存到 /chatlog/${currentUser.username}` : '未登录时以 guest 身份运行，聊天记录保存到 /chatlog/guest。';
+    document.getElementById('login-form').classList.toggle('hidden', isLoggedIn);
+    document.getElementById('logout-btn').classList.toggle('hidden', !isLoggedIn);
+    document.getElementById('settings-fields').classList.toggle('locked-setting', !isLoggedIn);
+    document.getElementById('save-settings-btn').disabled = !isLoggedIn;
+    document.getElementById('save-settings-btn').classList.toggle('opacity-40', !isLoggedIn);
+    applySettingsToUI();
+}
+
+async function loginSettings() {
+    const account = document.getElementById('login-account-input').value.trim();
+    const password = document.getElementById('login-password-input').value.trim();
+    if (!account || !password) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account, password })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'login failed');
+
+        currentUser = {
+            token: data.token,
+            username: data.username,
+            name: data.name,
+            account: data.account
+        };
+        isLoggedIn = true;
+        localStorage.setItem('scrna_copilot_current_user', JSON.stringify(currentUser));
+        localStorage.setItem('scrna_copilot_logged_in', 'true');
+
+        document.getElementById('login-account-input').value = '';
+        document.getElementById('login-password-input').value = '';
+        renderSettingsState();
+    } catch (err) {
+        alert(`登录失败：${err.message}`);
+    }
+}
+
+function logoutSettings() {
+    currentUser = {};
+    isLoggedIn = false;
+    localStorage.removeItem('scrna_copilot_current_user');
+    localStorage.setItem('scrna_copilot_logged_in', 'false');
+    renderSettingsState();
+}
+
+
+function saveSettings() {
+    if (!isLoggedIn) return;
+    settings = {
+        apiBase: document.getElementById('setting-api-base').value.trim() || API_BASE,
+        model: document.getElementById('setting-model').value.trim() || 'deepseek-chat',
+        devMode: document.getElementById('setting-dev-mode').checked,
+        autoRefreshWorkspace: document.getElementById('setting-auto-refresh').checked
+    };
+    localStorage.setItem('scrna_copilot_settings_v1', JSON.stringify(settings));
+    applySettingsToUI();
+    closeSettingsModal();
+}
+
+function openApiTraceModal() {
+    if (!settings.devMode) {
+        openSettingsModal();
+        return;
+    }
+    document.getElementById('api-modal').classList.remove('hidden');
+}
+</script>
+
+<script>
+/* =========================
+   V4 Generic Skill Orchestrator overrides
+   Complete generic skill orchestration:
+   - Plan → Confirm → Run
+   - preflight
+   - run_manifest.json + events.jsonl
+   - output/<username>/<run_id>
+   - run summary
+   - run workspace view
+   ========================= */
+
+let pendingPlans = {};
+let runStatusPollInterval = null;
+
+function ensureRunArray() {
+    const s = getActiveSession();
+    if (!Array.isArray(s.runs)) s.runs = [];
+    return s.runs;
+}
+
+function normalizeStepStatus(status) {
+    if (status === 'success') return 'done';
+    if (status === 'error') return 'failed';
+    return status || 'pending';
+}
+
+function getRuntimeUsername() {
+    return (window.currentUser && currentUser.username) || localStorage.getItem('scrna_username') || 'guest';
+}
+
+function getRuntimeAuthToken() {
+    return (window.currentUser && currentUser.token) || '';
+}
+
+function createRunRecordFromPlan(planData, query) {
+    const runs = ensureRunArray();
+    const steps = (planData.plan?.steps || []).map((x, i) => ({
+        key: x.id || `step_${i + 1}`,
+        label: x.title || x.name || x.skill || `Step ${i + 1}`,
+        status: 'pending',
+        description: x.description || '',
+        skill: x.skill || '',
+        command: x.command || '',
+        args: x.args || ''
+    }));
+
+    const run = {
+        id: planData.run_id,
+        aiMsgId: null,
+        query,
+        status: 'planned',
+        startedAt: planData.started_at ? new Date(planData.started_at).getTime() : Date.now(),
+        endedAt: null,
+        durationMs: 0,
+        failedStep: null,
+        steps,
+        logs: [],
+        artifacts: [],
+        output: '',
+        plan: planData.plan || {},
+        preflight: planData.preflight || {},
+        manifestPath: planData.manifest_path,
+        outputDir: planData.output_dir,
+        eventsPath: planData.events_path,
+        summaryPath: planData.summary_path,
+        username: planData.username || getRuntimeUsername()
+    };
+
+    runs.unshift(run);
+    getActiveSession().updatedAt = Date.now();
+    saveSessions();
+    renderSessionList();
+    document.getElementById('session-run-count').innerText = `${runs.length || 0} runs`;
+    return run;
+}
+
+function renderPlanCard(run) {
+    const container = document.getElementById('chat-history-container');
+    const plan = run.plan || {};
+    const preflight = run.preflight || {};
+    const steps = plan.steps || [];
+    const warnings = preflight.warnings || [];
+    const errors = preflight.errors || [];
+    const inputs = preflight.inputs || [];
+    const outputs = preflight.outputs || [];
+
+    const stepHtml = steps.length ? steps.map((s, i) => `
+        <div class="rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2">
+            <div class="flex items-center justify-between gap-3">
+                <div class="text-[12px] text-gray-200">${i + 1}. ${escapeHtml(s.title || s.name || s.id || 'Step')}</div>
+                ${s.skill ? `<span class="mono text-[10px] text-indigo-300">${escapeHtml(s.skill)}</span>` : ''}
+            </div>
+            ${s.description ? `<div class="text-[11px] text-gray-500 mt-1">${escapeHtml(s.description)}</div>` : ''}
+            ${s.args ? `<div class="mono text-[10px] text-gray-600 mt-1 break-all">${escapeHtml(s.args)}</div>` : ''}
+        </div>`).join('') : `<div class="text-[12px] text-gray-600">No plan steps generated.</div>`;
+
+    const preflightHtml = `
+        <div class="rounded-lg border ${preflight.ok ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-amber-500/20 bg-amber-500/5'} px-3 py-2">
+            <div class="${preflight.ok ? 'text-emerald-300' : 'text-amber-300'} text-[12px] font-medium">
+                Preflight: ${preflight.ok ? 'OK' : 'Needs Attention'}
+            </div>
+            ${inputs.length ? `<div class="mt-2 text-[11px] text-gray-400">Inputs: ${inputs.map(x => escapeHtml(x)).join(', ')}</div>` : ''}
+            ${outputs.length ? `<div class="mt-1 text-[11px] text-gray-400">Outputs: ${outputs.map(x => escapeHtml(x)).join(', ')}</div>` : ''}
+            ${errors.length ? `<div class="mt-2 text-[11px] text-red-300 space-y-1">${errors.map(e => `<div>• ${escapeHtml(e)}</div>`).join('')}</div>` : ''}
+            ${warnings.length ? `<div class="mt-2 text-[11px] text-amber-200/80 space-y-1">${warnings.map(w => `<div>• ${escapeHtml(w)}</div>`).join('')}</div>` : ''}
+            ${!errors.length && !warnings.length ? `<div class="mt-1 text-[11px] text-gray-500">输入、输出目录、skill 基础检查通过。</div>` : ''}
+        </div>`;
+
+    const html = `
+    <div class="flex space-x-3 group w-full" id="plan-card-${run.id}">
+        <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border bg-indigo-500/10 border-indigo-500/25 mt-0.5">
+            <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5h6M9 12h6M9 19h6M5 5h.01M5 12h.01M5 19h.01"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <div class="text-[11px] font-semibold text-gray-300 mb-2">Execution Plan</div>
+            <div class="rounded-xl border border-white/10 bg-[#0D0D0D] overflow-hidden shadow-lg">
+                <div class="px-4 py-3 border-b border-white/5 flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="mono text-[10px] text-gray-500">${escapeHtml(run.id)}</div>
+                        <div class="text-[12px] text-gray-200 mt-1 truncate">${escapeHtml(run.query)}</div>
+                    </div>
+                    <span class="text-[10px] mono text-gray-500 shrink-0">${escapeHtml(run.outputDir || '')}</span>
+                </div>
+                <div class="p-3 space-y-3">
+                    ${preflightHtml}
+                    <div class="space-y-2">${stepHtml}</div>
+                    <div class="flex items-center gap-2 pt-1">
+                        <button onclick="confirmRun('${run.id}')" class="text-[11px] px-3 py-1.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white">确认运行</button>
+                        <button onclick="editPlannedRun('${run.id}')" class="text-[11px] px-3 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">修改指令</button>
+                        <button onclick="cancelPlannedRun('${run.id}')" class="text-[11px] px-3 py-1.5 rounded-md border border-red-500/20 bg-red-500/10 hover:bg-red-500/20 text-red-200">取消</button>
+                        <button onclick="openRunInWorkspace('${run.id}')" class="ml-auto text-[11px] px-3 py-1.5 rounded-md border border-white/10 bg-white/[0.03] hover:bg-white/[0.07] text-gray-300">打开 Run</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    container.insertAdjacentHTML('beforeend', html);
+    container.scrollTop = container.scrollHeight;
+}
+
+function editPlannedRun(runId) {
+    const run = getRun(runId);
+    if (!run) return;
+    const input = document.getElementById('user-query-input');
+    input.value = run.query;
+    input.focus();
+    input.style.height = '';
+    input.style.height = input.scrollHeight + 'px';
+}
+
+function cancelPlannedRun(runId) {
+    const run = getRun(runId);
+    if (run) run.status = 'cancelled';
+    const card = document.getElementById(`plan-card-${runId}`);
+    if (card) card.remove();
+    saveSessions();
+    renderSessionList();
+}
+
+async function toggleAction() {
+    if (isRunning) {
+        await fetch(`${API_BASE}/api/stop`, { method: 'POST' }).catch(() => {});
+        if (currentRunId) completeRun(currentRunId, 'interrupted', 'Execution interrupted by user.');
+        const errorId = 'err_' + Date.now();
+        renderHistoricalMessage({ id: errorId, role: 'error', text: 'Execution interrupted by user.' }, true);
+        setUIState(false);
+        stopRunStatusPolling();
+        return;
+    }
+
+    const inputEl = document.getElementById('user-query-input');
+    const query = inputEl.value.trim();
+    if (!query) return;
+
+    inputEl.value = "";
+    inputEl.style.height = 'auto';
+
+    const userMsgId = 'u_' + Date.now();
+    renderHistoricalMessage({ id: userMsgId, role: 'user', text: query }, true);
+
+    const currentSess = getActiveSession();
+    if (currentSess.chats.length === 1 && currentSess.name.startsWith('New Pipeline')) {
+        currentSess.name = query.substring(0, 18) + (query.length > 18 ? '...' : '');
+        renderSessionList();
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/api/plan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query,
+                session_id: activeSessionId,
+                username: getRuntimeUsername(),
+                auth_token: getRuntimeAuthToken()
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'plan failed');
+
+        pendingPlans[data.run_id] = data;
+        const run = createRunRecordFromPlan(data, query);
+        renderPlanCard(run);
+        currentRunId = data.run_id;
+        setWorkspaceView('run');
+        refreshWorkspace();
+    } catch (err) {
+        const errId = 'err_' + Date.now();
+        renderHistoricalMessage({ id: errId, role: 'error', text: `Plan failed: ${err.message}` }, true);
+    }
+}
+
+async function confirmRun(runId) {
+    const run = getRun(runId);
+    if (!run || isRunning) return;
+
+    currentRunId = runId;
+    currentAiMsgId = 'ai_' + Date.now();
+    run.aiMsgId = currentAiMsgId;
+    run.status = 'running';
+    run.startedAt = Date.now();
+    run.steps.forEach((s, i) => s.status = i === 0 ? 'running' : 'pending');
+    saveSessions();
+
+    const planCard = document.getElementById(`plan-card-${runId}`);
+    if (planCard) planCard.remove();
+
+    const container = document.getElementById('chat-history-container');
+    container.insertAdjacentHTML('beforeend', renderRunCardShell(run));
+    renderRunCard(run.id);
+
+    const aiSkeleton = `
+        <div class="flex space-x-3 group w-full" id="msg-${currentAiMsgId}">
+            <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0 border bg-indigo-500/20 border-indigo-500/30 mt-0.5">
+                <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <div class="flex-1 space-y-2 min-w-0">
+                <div class="text-[11px] font-semibold text-gray-300 flex items-center space-x-2"><span>Copilot Agent</span></div>
+                <details id="trace-details-${currentAiMsgId}" class="trace-box bg-[#111] border border-white/10 rounded-lg overflow-hidden transition-all" open>
+                    <summary class="cursor-pointer p-2.5 text-[11px] text-gray-400 font-medium flex items-center justify-between hover:bg-white/5 transition-colors select-none">
+                        <div class="flex items-center space-x-2">
+                            <svg id="icon-spin-${currentAiMsgId}" class="w-3.5 h-3.5 text-indigo-400 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            <svg id="icon-done-${currentAiMsgId}" class="w-3.5 h-3.5 text-emerald-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                            <span id="summary-${currentAiMsgId}">Running generic skill plan...</span>
+                            <svg class="arrow-icon w-3 h-3 text-gray-500 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </div>
+                        <span id="timer-${currentAiMsgId}" class="mono text-gray-500">0.0s</span>
+                    </summary>
+                    <div class="px-3 pt-1 pb-3 border-t border-white/5 max-h-60 overflow-y-auto space-y-1 bg-[#050505]" id="logs-${currentAiMsgId}"></div>
+                </details>
+                <div id="content-${currentAiMsgId}" class="prose prose-invert max-w-none text-[13px] leading-relaxed text-gray-300 hidden"></div>
+                <div id="action-${currentAiMsgId}" class="hidden pt-2">
+                    <button onclick="openRunInWorkspace('${runId}')" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-[11px] font-medium text-gray-300 hover:text-indigo-300 w-max shadow-sm">
+                        <span>打开 Run Workspace</span>
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    container.insertAdjacentHTML('beforeend', aiSkeleton);
+    container.scrollTop = container.scrollHeight;
+
+    setUIState(true);
+    renderedLogCount = 0;
+    renderedTraceCount = 0;
+    latestApiTraces = [];
+    startTime = Date.now();
+
+    timerInterval = setInterval(() => {
+        const tBox = document.getElementById(`timer-${currentAiMsgId}`);
+        if (tBox) tBox.innerText = formatDuration(Date.now() - startTime);
+        const runDuration = document.getElementById(`run-duration-${run.id}`);
+        if (runDuration) runDuration.innerText = formatDuration(Date.now() - run.startedAt);
+    }, 100);
+
+    pollInterval = setInterval(fetchLogs, 500);
+    startRunStatusPolling(runId);
+
+    try {
+        const res = await fetch(`${API_BASE}/api/run_plan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                run_id: runId,
+                session_id: activeSessionId,
+                username: getRuntimeUsername(),
+                auth_token: getRuntimeAuthToken()
+            })
+        });
+        const data = await res.json();
+        await fetchLogs();
+
+        if (data.output) {
+            document.getElementById(`icon-spin-${currentAiMsgId}`)?.classList.add('hidden');
+            document.getElementById(`icon-done-${currentAiMsgId}`)?.classList.remove('hidden');
+            document.getElementById(`summary-${currentAiMsgId}`).innerText = data.success ? "Run completed" : "Run failed";
+
+            await streamRenderMarkdown(data.output || '', currentAiMsgId);
+            document.getElementById(`action-${currentAiMsgId}`)?.classList.remove('hidden');
+
+            const s = getActiveSession();
+            s.chats.push({ id: currentAiMsgId, role: 'agent', text: data.output || '', runId: run.id });
+        }
+
+        if (!res.ok || !data.success) throw new Error(data.error || "Server error");
+
+        completeRun(run.id, 'success', data.output || '');
+        if (data.manifest) {
+            const r = getRun(run.id);
+            r.manifest = data.manifest;
+            r.outputDir = data.manifest.output_dir || r.outputDir;
+            r.manifestPath = data.manifest.manifest_path || r.manifestPath;
+            r.eventsPath = data.manifest.events_path || r.eventsPath;
+            r.summaryPath = data.manifest.summary_path || r.summaryPath;
+        }
+        saveSessions();
+    } catch (err) {
+        completeRun(run.id, 'failed', err.message);
+        
+        const s = getActiveSession();
+        const chatExists = s.chats.some(c => c.id === currentAiMsgId);
+        if (!chatExists) {
+            const errId = 'err_' + Date.now();
+            renderHistoricalMessage({ id: errId, role: 'error', text: err.message, runId: run.id }, true);
+        }
+    } finally {
+        setUIState(false);
+        stopRunStatusPolling();
+        refreshWorkspace();
+    }
+}
+
+function startRunStatusPolling(runId) {
+    stopRunStatusPolling();
+    runStatusPollInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            syncRunFromServer(data);
+        } catch {}
+    }, 1500);
+}
+
+function stopRunStatusPolling() {
+    if (runStatusPollInterval) clearInterval(runStatusPollInterval);
+    runStatusPollInterval = null;
+}
+
+function syncRunFromServer(serverRun) {
+    const run = getRun(serverRun.id);
+    if (!run) return;
+
+    run.status = serverRun.status || run.status;
+    run.output = serverRun.output || run.output;
+    run.logs = serverRun.logs || run.logs;
+    run.artifacts = serverRun.artifacts || run.artifacts;
+    run.manifest = serverRun.manifest || run.manifest;
+    run.preflight = serverRun.preflight || run.preflight;
+    run.outputDir = serverRun.output_dir || run.outputDir;
+
+    if (serverRun.ended_at && serverRun.started_at) {
+        run.durationMs = Math.max(0, (new Date(serverRun.ended_at).getTime() || Date.now()) - (new Date(serverRun.started_at).getTime() || Date.now()));
+    }
+
+    const manifestSteps = serverRun.manifest?.plan?.steps || [];
+    if (manifestSteps.length) {
+        run.steps = manifestSteps.map((s, i) => ({
+            key: s.id || `step_${i + 1}`,
+            label: s.title || s.name || s.skill || `Step ${i + 1}`,
+            description: s.description || '',
+            skill: s.skill || '',
+            status: normalizeStepStatus(s.status || run.steps?.[i]?.status || 'pending')
+        }));
+    }
+
+    const failed = run.steps.find(s => s.status === 'failed');
+    run.failedStep = failed ? failed.label : null;
+
+    renderRunCard(run.id);
+    if (workspaceView === 'run') renderWorkspaceRun(false);
+    saveSessions();
+}
+
+async function fetchLogs() {
+    try {
+        const url = currentRunId ? `${API_BASE}/api/logs?run_id=${encodeURIComponent(currentRunId)}` : `${API_BASE}/api/logs`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const logBox = document.getElementById(`logs-${currentAiMsgId}`);
+        if (currentRunId && Array.isArray(data.logs)) updateRunFromLogs(currentRunId, data.logs);
+
+        for (let i = renderedLogCount; i < (data.logs || []).length; i++) {
+            const log = data.logs[i];
+            if (logBox) {
+                const entry = document.createElement('div');
+                entry.className = 'text-[11px] mono leading-5';
+                const statusIcon = log.status === 'success' ? '✔' : log.status === 'error' ? '✖' : '➜';
+                const statusClass = log.status === 'success' ? 'text-emerald-400' : log.status === 'error' ? 'text-red-400' : 'text-amber-400';
+                entry.innerHTML = `<span class="${statusClass} mr-1.5">${statusIcon}</span><span class="text-gray-300">${escapeHtml(log.step || '')}</span>${log.message ? `<div class="pl-4 text-gray-500 mt-0.5 break-all">${escapeHtml(log.message)}</div>` : ''}`;
+                logBox.appendChild(entry);
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+        }
+        renderedLogCount = (data.logs || []).length;
+
+        if (data.api_traces) latestApiTraces = data.api_traces;
+        if (data.api_traces && data.api_traces.length > renderedTraceCount) {
+            renderApiTrace(data.api_traces.slice(renderedTraceCount));
+            renderedTraceCount = data.api_traces.length;
+        }
+    } catch(e) {}
+}
+
+function updateRunFromLogs(runId, logs) {
+    const run = getRun(runId);
+    if (!run) return;
+    run.logs = logs.map(l => ({ ...l }));
+
+    logs.forEach((log) => {
+        let idx = -1;
+        if (log.step_id) idx = run.steps.findIndex(s => s.key === log.step_id);
+        if (idx < 0 && log.step) idx = run.steps.findIndex(s => (log.step || '').includes(s.label) || (log.step || '').includes(s.skill));
+        if (idx < 0) idx = run.steps.findIndex(s => s.status === 'running');
+        if (idx < 0) idx = run.steps.findIndex(s => s.status === 'pending');
+        if (idx < 0) return;
+
+        if (log.status === 'error') {
+            run.steps[idx].status = 'failed';
+            run.failedStep = run.steps[idx].label;
+            run.status = 'failed';
+        } else if (log.status === 'success') {
+            run.steps[idx].status = 'done';
+            const next = run.steps.find(s => s.status === 'pending');
+            if (next && run.status === 'running') next.status = 'running';
+        } else if (run.steps[idx].status === 'pending') {
+            run.steps[idx].status = 'running';
+        }
+    });
+
+    renderRunCard(runId);
+    if (workspaceView === 'logs') renderWorkspaceLogs();
+    if (workspaceView === 'run') renderWorkspaceRun(false);
+    saveSessions();
+}
+
+function openRunInWorkspace(runId) {
+    currentRunId = runId;
+    setWorkspaceView('run');
+    renderFileTree();
+    refreshWorkspace();
+}
+
+function setWorkspaceView(view, rerender = true) {
+    workspaceView = view;
+    ['explorer', 'report', 'run', 'gallery', 'tables', 'logs'].forEach(v => {
+        document.getElementById(`tab-${v}`)?.classList.toggle('active', v === view);
+    });
+    if (rerender) renderCurrentWorkspaceView();
+}
+
+function renderCurrentWorkspaceView() {
+    if (workspaceView === 'run') {
+        renderWorkspaceRun();
+        return;
+    }
+    if (activeFilePath) {
+        const f = (window.__workspaceFiles || collectSessionArtifacts()).find(x => x.path === activeFilePath);
+        if (f && ['report', 'tables', 'gallery', 'explorer'].includes(workspaceView)) {
+            renderFilePreview(f);
+            return;
+        }
+    }
+    if (workspaceView === 'gallery') renderWorkspaceGallery();
+    else if (workspaceView === 'tables') renderWorkspaceTables();
+    else if (workspaceView === 'logs') renderWorkspaceLogs();
+    else if (workspaceView === 'report') renderLatestReport();
+    else renderWorkspaceEmpty();
+}
+
+async function renderWorkspaceRun(fetchServer = true) {
+    const content = document.getElementById('workspace-content');
+    const run = currentRunId ? getRun(currentRunId) : (getActiveSession().runs || [])[0];
+    if (!run) {
+        content.innerHTML = `<div class="h-full flex items-center justify-center text-gray-600 text-[13px]">No run selected.</div>`;
+        return;
+    }
+
+    let serverRun = null;
+    if (fetchServer) {
+        try {
+            const res = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(run.id)}`);
+            if (res.ok) {
+                serverRun = await res.json();
+                syncRunFromServer(serverRun);
+            }
+        } catch {}
+    }
+
+    const merged = getRun(run.id) || run;
+    const manifest = serverRun?.manifest || merged.manifest || {};
+    const preflight = serverRun?.preflight || merged.preflight || {};
+    const logs = serverRun?.logs || merged.logs || [];
+    const artifacts = serverRun?.artifacts || merged.artifacts || [];
+    const errorClassification = serverRun?.error_classification || merged.errorClassification;
+
+    const stepsHtml = (manifest.plan?.steps || merged.steps || []).map((s, i) => {
+        const status = normalizeStepStatus(s.status || merged.steps?.[i]?.status || 'pending');
+        return `
+        <div class="rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2">
+            <div class="flex items-center justify-between gap-3">
+                <div class="text-[12px] text-gray-200">${i + 1}. ${escapeHtml(s.title || s.label || s.name || s.id || 'Step')}</div>
+                <span class="text-[10px] mono ${status === 'done' ? 'text-emerald-300' : status === 'failed' ? 'text-red-300' : status === 'running' ? 'text-amber-300' : 'text-gray-500'}">${escapeHtml(status)}</span>
+            </div>
+            ${s.description ? `<div class="text-[11px] text-gray-500 mt-1">${escapeHtml(s.description)}</div>` : ''}
+            ${s.skill ? `<div class="mono text-[10px] text-indigo-300 mt-1">${escapeHtml(s.skill)} ${escapeHtml(s.args || '')}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    content.innerHTML = `
+        <div class="h-full overflow-auto p-6">
+            <div class="max-w-5xl space-y-4">
+                <div class="rounded-xl border border-white/10 bg-[#0A0A0A] p-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <div class="mono text-[11px] text-indigo-300">${escapeHtml(merged.id)}</div>
+                            <div class="text-sm text-gray-200 mt-1">${escapeHtml(merged.query || manifest.query || '')}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-[12px] ${merged.status === 'success' ? 'text-emerald-300' : merged.status === 'failed' ? 'text-red-300' : merged.status === 'running' ? 'text-amber-300' : 'text-gray-400'}">${escapeHtml(merged.status)}</div>
+                            <div class="mono text-[10px] text-gray-600 mt-1">${escapeHtml(merged.outputDir || manifest.output_dir || '')}</div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mt-4 text-[11px]">
+                        <div class="rounded-lg bg-white/[0.025] border border-white/10 p-3">
+                            <div class="text-gray-500">Manifest</div>
+                            <button onclick="openFileByPath('${escapeAttr(merged.manifestPath || manifest.manifest_path || '')}')" class="mono text-gray-300 mt-1 break-all text-left hover:text-indigo-300">${escapeHtml(merged.manifestPath || manifest.manifest_path || '')}</button>
+                        </div>
+                        <div class="rounded-lg bg-white/[0.025] border border-white/10 p-3">
+                            <div class="text-gray-500">Events</div>
+                            <button onclick="openFileByPath('${escapeAttr(merged.eventsPath || manifest.events_path || '')}')" class="mono text-gray-300 mt-1 break-all text-left hover:text-indigo-300">${escapeHtml(merged.eventsPath || manifest.events_path || '')}</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-white/10 bg-[#0A0A0A] p-4">
+                    <div class="text-sm text-gray-200 mb-3">Plan / Steps</div>
+                    <div class="space-y-2">${stepsHtml || '<div class="text-[12px] text-gray-600">No steps.</div>'}</div>
+                </div>
+
+                <div class="rounded-xl border border-white/10 bg-[#0A0A0A] p-4">
+                    <div class="text-sm text-gray-200 mb-3">Preflight</div>
+                    <pre class="mono text-[11px] text-gray-300 whitespace-pre-wrap">${escapeHtml(JSON.stringify(preflight, null, 2))}</pre>
+                </div>
+
+                ${errorClassification ? `
+                <div class="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+                    <div class="text-sm text-red-200 mb-3">Error Classification</div>
+                    <pre class="mono text-[11px] text-red-100/80 whitespace-pre-wrap">${escapeHtml(JSON.stringify(errorClassification, null, 2))}</pre>
+                </div>` : ''}
+
+                <div class="rounded-xl border border-white/10 bg-[#0A0A0A] p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="text-sm text-gray-200">Artifacts</div>
+                        <button onclick="setWorkspaceView('explorer')" class="text-[11px] text-gray-500 hover:text-indigo-300">Open Explorer</button>
+                    </div>
+                    <div class="space-y-1 max-h-56 overflow-auto">
+                        ${artifacts.length ? artifacts.map(a => `
+                            <button onclick="openFileByPath('${escapeAttr(a.path || '')}')" class="w-full text-left rounded-md hover:bg-white/5 px-2 py-1">
+                                <span class="text-[11px] text-gray-300">${escapeHtml(a.name || a.path || '')}</span>
+                                <span class="text-[10px] text-gray-600 ml-2">${escapeHtml(a.type || '')}</span>
+                            </button>`).join('') : '<div class="text-[12px] text-gray-600">No artifacts registered yet.</div>'}
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-white/10 bg-[#0A0A0A] p-4">
+                    <div class="text-sm text-gray-200 mb-3">Recent Logs</div>
+                    <div class="space-y-1 max-h-72 overflow-auto">${logs.length ? logs.map(log => `
+                        <div class="mono text-[11px] leading-5">
+                            <span class="${log.status === 'success' ? 'text-emerald-400' : log.status === 'error' ? 'text-red-400' : 'text-amber-400'}">${log.status === 'success' ? '✔' : log.status === 'error' ? '✖' : '➜'}</span>
+                            <span class="text-gray-300 ml-1">${escapeHtml(log.step || '')}</span>
+                            ${log.message ? `<div class="text-gray-600 pl-5 break-all">${escapeHtml(log.message)}</div>` : ''}
+                        </div>`).join('') : '<div class="text-[12px] text-gray-600">No logs.</div>'}</div>
+                </div>
+            </div>
+        </div>`;
+}
+
+async function refreshWorkspace() {
+    const status = document.getElementById('workspace-status');
+    if (status) status.innerText = 'loading...';
+    window.__workspaceFiles = await fetchWorkspaceTree();
+    renderFileTree();
+    renderCurrentWorkspaceView();
+    if (status) status.innerText = `${window.__workspaceFiles.length} files`;
+}
+
+async function fetchWorkspaceTree() {
+    const runId = currentRunId || '';
+    const root = document.getElementById('workspace-root')?.value || 'all';
+    const urls = [
+        `${API_BASE}/api/workspace/tree?session_id=${encodeURIComponent(activeSessionId)}&run_id=${encodeURIComponent(runId)}&root=${encodeURIComponent(root)}&username=${encodeURIComponent(getRuntimeUsername())}`,
+        `${API_BASE}/api/artifacts?session_id=${encodeURIComponent(activeSessionId)}&run_id=${encodeURIComponent(runId)}&root=${encodeURIComponent(root)}`
+    ];
+    for (const url of urls) {
+        try {
+            const res = await fetch(url);
+            if (!res.ok) continue;
+            const data = await res.json();
+            const files = Array.isArray(data) ? data : (data.files || data.artifacts || []);
+            if (files.length) {
+                return files.map(f => ({
+                    path: f.path || f.url || f.name,
+                    url: f.url || pathToUrl(f.path || f.name),
+                    name: f.name || String(f.path || '').split('/').pop(),
+                    type: f.type || getFileType(f.path || f.url || f.name),
+                    runId: f.run_id || f.runId || null
+                })).filter(f => !shouldIgnore(f.path));
+            }
+        } catch {}
+    }
+    return collectSessionArtifacts();
+}
+
+async function uploadFiles(kind, fileList) {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+
+    const form = new FormData();
+    files.forEach(f => form.append('files', f));
+    form.append('username', getRuntimeUsername());
+    form.append('auth_token', getRuntimeAuthToken());
+
+    const endpoint = kind === 'skill' ? '/api/upload/skill' : '/api/upload/data';
+    const status = document.getElementById('workspace-status');
+    if (status) status.innerText = `uploading ${files.length} file(s)...`;
+
+    try {
+        const res = await fetch(`${API_BASE}${endpoint}`, { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'upload failed');
+
+        const saved = [...(data.saved || []), ...(data.extracted || [])];
+        if (kind === 'skill') {
+            const val = await fetch(`${API_BASE}/api/skills/validate`).then(r => r.json()).catch(() => null);
+            if (status) status.innerText = `uploaded ${saved.length}; validated ${val?.skills?.length || 0} skill item(s)`;
+        } else {
+            if (status) status.innerText = `uploaded ${saved.length} file(s)`;
+        }
+        await refreshWorkspace();
+    } catch (err) {
+        if (status) status.innerText = `upload failed`;
+        alert(`上传失败：${err.message}`);
+    } finally {
+        const input = kind === 'skill' ? document.getElementById('skill-upload-input') : document.getElementById('data-upload-input');
+        if (input) input.value = '';
+    }
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+[project]
+name = "openaiqaq"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "kay>=0.1.2",
+    "openai-agents>=0.17.5",
+]

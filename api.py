@@ -137,6 +137,7 @@ Preflight:
 {json.dumps(summary, ensure_ascii=False, indent=2)}
 
 规则:
+1. 当前的系统是windows
 2. 运行技能前复核与阅读文档规则：在调用 execute_skill 运行具体技能之前，你必须先读取该技能所在目录下的说明文件，如 README.md、README.txt 或 skill.json、manifest.json（可以使用 read_project_file 读取），以详细了解该技能的入参定义、执行格式与用法，严禁在未阅读文档说明的情况下盲目运行技能。执行前也可以调用 list_skills、list_data_files 复核。
 3. 运行任务规则：
    - 专门/定制技能任务（即计划中指定了 `skill` 字段且不为空）：必须调用 `execute_skill(skill_file, args, step_id)` 执行。
